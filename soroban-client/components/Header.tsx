@@ -108,9 +108,9 @@ export default function Header() {
             </button>
           )}
 
-          <Link href="/create-event" className="bg-[#FF5722] hover:bg-[#F4511E] text-white px-6 py-2 rounded-lg font-bold shadow-md transition">
+          <button className="bg-[#FF5722] hover:bg-[#F4511E] text-white px-6 py-2 rounded-lg font-bold shadow-md transition">
             Create Events
-          </Link>
+          </button>
         </div>
 
         {/* Mobile Hamburger Button */}
@@ -196,22 +196,6 @@ export default function Header() {
             >
               Marketplace
             </Link>
-            <Link
-              href="/create-event"
-              className="block text-gray-200 hover:text-white font-medium text-lg transition py-2"
-              onClick={handleMenuItemClick}
-            >
-              Create Event
-            </Link>
-            {isConnected && (
-              <Link
-                href="/dashboard"
-                className="block text-gray-200 hover:text-white font-medium text-lg transition py-2"
-                onClick={handleMenuItemClick}
-              >
-                Dashboard
-              </Link>
-            )}
           </nav>
 
           {/* Divider */}
@@ -248,13 +232,12 @@ export default function Header() {
               </button>
             )}
 
-            <Link
-              href="/create-event"
+            <button
               onClick={handleMenuItemClick}
               className="w-full bg-[#FF5722] hover:bg-[#F4511E] text-white px-4 py-3 rounded-lg font-bold shadow-md transition"
             >
               Create Events
-            </Link>
+            </button>
           </div>
         </div>
       </nav>
