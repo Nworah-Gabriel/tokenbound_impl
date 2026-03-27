@@ -100,9 +100,9 @@ export default function Header() {
             </button>
           )}
 
-          <button className="bg-[#FF5722] hover:bg-[#F4511E] text-white px-6 py-2 rounded-lg font-bold shadow-md transition">
+          <Link href="/create-event" className="bg-[#FF5722] hover:bg-[#F4511E] text-white px-6 py-2 rounded-lg font-bold shadow-md transition text-center inline-block">
             Create Events
-          </button>
+          </Link>
         </div>
 
         {/* Mobile Hamburger Button */}
@@ -224,12 +224,13 @@ export default function Header() {
               </button>
             )}
 
-            <button
+            <Link
+              href="/create-event"
               onClick={handleMenuItemClick}
-              className="w-full bg-[#FF5722] hover:bg-[#F4511E] text-white px-4 py-3 rounded-lg font-bold shadow-md transition"
+              className="w-full block bg-[#FF5722] hover:bg-[#F4511E] text-white px-4 py-3 rounded-lg font-bold shadow-md transition text-center"
             >
               Create Events
-            </button>
+            </Link>
           </div>
         </div>
       </nav>

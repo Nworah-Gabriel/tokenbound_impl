@@ -1,10 +1,7 @@
-import StellarSdk from "@stellar/stellar-sdk";
+import { Horizon, TransactionBuilder, Operation, Networks } from "@stellar/stellar-sdk";
 import { nativeToScVal } from "@stellar/stellar-base";
 import { signTransaction } from "@stellar/freighter-api";
-
-// "@stellar/stellar-sdk" has a default export that bundles several
-// constructors; we pull out the pieces we need for clarity.
-const { Server, TransactionBuilder, Operation, Networks } = StellarSdk;
+const { Server } = Horizon;
 
 // Configuration helpers – prefer environment variables so they can be swapped
 // for different networks (testnet / preview / mainnet) without changing code.
@@ -84,5 +81,6 @@ export async function createEvent(params: CreateEventParams) {
   });
 
   // submit to horizon and return the result
-  return await server.submitTransaction(signedTxXdr);
+  const signedTx = TransactionBuilder.fromXDR(signedTxXdr, NETWORK_PASSPHRASE);
+  return await server.submitTransaction(signedTx as any);
 }
