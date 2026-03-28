@@ -100,6 +100,22 @@ pub struct BuyerPurchase {
     pub total_paid: i128,
 }
 
+/// A promotional discount code attached to a specific event.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DiscountCode {
+    /// The code string (mirrors the key for convenient querying)
+    pub code: String,
+    /// Percentage discount applied to the ticket price (1–100)
+    pub percentage: u32,
+    /// Maximum number of times this code may be used (0 = unlimited)
+    pub max_uses: u32,
+    /// How many uses are still available
+    pub uses_remaining: u32,
+    /// Unix timestamp after which the code is invalid (0 = no expiration)
+    pub expiration: u64,
+}
+
 #[contract]
 pub struct EventManager;
 
