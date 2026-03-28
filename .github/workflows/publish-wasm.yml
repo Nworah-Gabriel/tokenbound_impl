@@ -24,43 +24,27 @@ jobs:
 
       - name: Build all contracts
         run: |
-          # Show current directory
-          pwd
-          ls -la
-          
-          # Build all contracts
           cd soroban-contract
-          cargo build --target wasm32v1-none --release
           
-          # Debug: Show what was built
-          echo "=== Directory structure after build ==="
-          ls -la
-          echo "=== Checking target directory ==="
-          ls -la target/
-          echo "=== Checking wasm32v1-none/release ==="
-          ls -la target/wasm32v1-none/release/ || echo "Directory not found"
-          echo "=== Checking for WASM files ==="
-          find target -name "*.wasm" -type f
+          # Build only the contract packages (exclude integration tests)
+          cargo build --target wasm32v1-none --release \
+            -p tba_account \
+            -p tba_registry \
+            -p ticket_nft \
+            -p ticket_factory \
+            -p event_manager \
+            -p marketplace
+          
+          echo "=== WASM files in release directory ==="
+          ls -la target/wasm32v1-none/release/*.wasm 2>/dev/null || echo "No WASM files found"
 
       - name: Generate checksums
         run: |
-          # Check if the directory exists
-          if [ ! -d "soroban-contract/target/wasm32v1-none/release" ]; then
-            echo "ERROR: Directory soroban-contract/target/wasm32v1-none/release not found!"
-            echo "Current directory: $(pwd)"
-            echo "Contents of soroban-contract:"
-            ls -la soroban-contract/
-            echo "Contents of soroban-contract/target:"
-            ls -la soroban-contract/target/ || echo "No target directory"
-            exit 1
-          fi
-          
           cd soroban-contract/target/wasm32v1-none/release/
           
           # Check if any WASM files exist
           if [ -z "$(ls *.wasm 2>/dev/null)" ]; then
-            echo "ERROR: No WASM files found in $(pwd)"
-            ls -la
+            echo "Error: No WASM files found!"
             exit 1
           fi
           
