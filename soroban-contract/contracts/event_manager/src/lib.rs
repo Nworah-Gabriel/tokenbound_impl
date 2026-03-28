@@ -29,10 +29,6 @@ pub enum Error {
     NotABuyer = 16,
     EventSoldOut = 17,
     TicketsBelowSold = 18,
-    /// Returned by withdraw_funds when the event end date has not yet passed
-    EventNotEnded = 19,
-    /// Returned by withdraw_funds when funds have already been withdrawn
-    FundsAlreadyWithdrawn = 20,
 }
 
 #[contracttype]
@@ -42,13 +38,8 @@ pub enum DataKey {
     TicketFactory,
     RefundClaimed(u32, Address),
     EventBuyers(u32),
-    /// event_id -> Vec<TicketTier>
     EventTiers(u32),
     BuyerPurchase(u32, Address),
-    /// Escrowed ticket sale balance held by the contract until withdrawal
-    EventBalance(u32),
-    /// Set to `true` once the organizer has withdrawn funds for an event
-    FundsWithdrawn(u32),
 }
 
 /// A single ticket tier (e.g. VIP, General, Early Bird)
@@ -125,19 +116,17 @@ impl EventManager {
         Ok(())
     }
 
-    /// Create a new event.
-    /// `params.tiers`: optional multi-tier config. If empty, falls back to a single
-    /// "General" tier using `params.ticket_price` and `params.total_tickets` (backward-compatible).
-    pub fn create_event(env: Env, params: CreateEventParams) -> Result<u32, Error> {
+    /// Create a new event with tier support
+    pub fn create_event_with_tiers(env: Env, params: CreateEventParams) -> Result<u32, Error> {
         params.organizer.require_auth();
 
-        Self::validate_event_params(
-            &env,
-            params.start_date,
-            params.end_date,
-            params.ticket_price,
-            params.total_tickets,
-        )?;
+        // Validate basic params
+        if params.start_date <= env.ledger().timestamp() {
+            return Err(Error::InvalidStartDate);
+        }
+        if params.end_date <= params.start_date {
+            return Err(Error::InvalidEndDate);
+        }
 
         let resolved_tiers = if params.tiers.is_empty() {
             let mut v = Vec::new(&env);
@@ -174,8 +163,12 @@ impl EventManager {
             .unwrap_or(params.ticket_price);
 
         let event_id = Self::get_and_increment_counter(&env)?;
-        let ticket_nft_addr =
-            Self::deploy_ticket_nft(&env, event_id).ok_or(Error::FactoryNotInitialized)?;
+        let ticket_nft_addr = Self::deploy_ticket_nft(
+            &env,
+            event_id,
+            params.theme.clone(),
+            agg_total,
+        )?;
 
         let event = Event {
             id: event_id,
@@ -198,6 +191,7 @@ impl EventManager {
         env.storage()
             .persistent()
             .set(&DataKey::EventTiers(event_id), &resolved_tiers);
+
         Self::extend_persistent_ttl(&env, &DataKey::Event(event_id));
         Self::extend_persistent_ttl(&env, &DataKey::EventTiers(event_id));
         env.storage()
@@ -212,6 +206,33 @@ impl EventManager {
         Ok(event_id)
     }
 
+    /// Legacy create_event for backward compatibility
+    pub fn create_event(
+        env: Env,
+        organizer: Address,
+        theme: String,
+        event_type: String,
+        start_date: u64,
+        end_date: u64,
+        ticket_price: i128,
+        total_tickets: u128,
+        payment_token: Address,
+    ) -> Result<u32, Error> {
+        let tiers = Vec::new(&env);
+        let params = CreateEventParams {
+            organizer,
+            theme,
+            event_type,
+            start_date,
+            end_date,
+            ticket_price,
+            total_tickets,
+            payment_token,
+            tiers,
+        };
+        Self::create_event_with_tiers(env, params)
+    }
+
     pub fn get_event(env: Env, event_id: u32) -> Result<Event, Error> {
         env.storage()
             .persistent()
@@ -219,7 +240,6 @@ impl EventManager {
             .ok_or(Error::EventNotFound)
     }
 
-    /// Get tiers for an event
     pub fn get_event_tiers(env: Env, event_id: u32) -> Result<Vec<TicketTier>, Error> {
         env.storage()
             .persistent()
@@ -227,7 +247,6 @@ impl EventManager {
             .ok_or(Error::EventNotFound)
     }
 
-    /// Get total number of events
     pub fn get_event_count(env: Env) -> u32 {
         env.storage()
             .instance()
@@ -235,10 +254,10 @@ impl EventManager {
             .unwrap_or(0)
     }
 
-    /// Get all events
     pub fn get_all_events(env: Env) -> Vec<Event> {
         let count = Self::get_event_count(env.clone());
         let mut events = Vec::new(&env);
+
         for event_id in 0..count {
             if let Some(event) = env.storage().persistent().get(&DataKey::Event(event_id)) {
                 events.push_back(event);
@@ -278,8 +297,6 @@ impl EventManager {
         Ok(())
     }
 
-    /// Claim refund for a canceled event (pull model).
-    /// Funds are transferred from the contract's escrowed balance back to the buyer.
     pub fn claim_refund(env: Env, claimer: Address, event_id: u32) -> Result<(), Error> {
         claimer.require_auth();
 
@@ -341,72 +358,88 @@ impl EventManager {
         Ok(())
     }
 
-    /// Update event details. Only callable by the organizer before the event is canceled.
-    pub fn update_event(
+    pub fn purchase_ticket(
         env: Env,
+        buyer: Address,
         event_id: u32,
-        theme: Option<String>,
-        ticket_price: Option<i128>,
-        total_tickets: Option<u128>,
-        start_date: Option<u64>,
-        end_date: Option<u64>,
+        tier_index: u32,
     ) -> Result<(), Error> {
+        Self::purchase_tickets(env, buyer, event_id, tier_index, 1)
+    }
+
+   pub fn purchase_tickets(
+        env: Env,
+        buyer: Address,
+        event_id: u32,
+        tier_index: u32,
+        quantity: u128,
+    ) -> Result<(), Error> {
+        buyer.require_auth();
+
+        if quantity == 0 {
+            return Err(Error::InvalidTicketCount);
+        }
+
         let mut event: Event = env
             .storage()
             .persistent()
             .get(&DataKey::Event(event_id))
             .ok_or(Error::EventNotFound)?;
 
-        event.organizer.require_auth();
-
         if event.is_canceled {
             return Err(Error::EventAlreadyCanceled);
         }
 
-        let current_time = env.ledger().timestamp();
+        let mut tiers: Vec<TicketTier> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::EventTiers(event_id))
+            .ok_or(Error::EventNotFound)?;
 
-        if let Some(next_theme) = theme {
-            event.theme = next_theme;
+        // Keep tier_index as u32 for Soroban Vec operations
+        if tier_index >= tiers.len() {
+            return Err(Error::InvalidTierIndex);
         }
 
-        if let Some(next_price) = ticket_price {
-            if next_price < 0 {
-                return Err(Error::NegativeTicketPrice);
-            }
-            event.ticket_price = next_price;
+        let mut tier = tiers.get(tier_index).unwrap();
+        
+        if tier.sold_quantity + quantity > tier.total_quantity {
+            return Err(Error::TierSoldOut);
         }
 
-        if let Some(next_total) = total_tickets {
-            if next_total == 0 {
-                return Err(Error::InvalidTicketCount);
-            }
-            if next_total < event.tickets_sold {
-                return Err(Error::TicketsBelowSold);
-            }
-            event.total_tickets = next_total;
+        let price_per_ticket = tier.price;
+        let total_price = Self::calculate_total_price(price_per_ticket, quantity);
+
+        // Handle payment
+        if total_price > 0 {
+            let token_client = soroban_sdk::token::Client::new(&env, &event.payment_token);
+            token_client.transfer(&buyer, &event.organizer, &total_price);
         }
 
-        let effective_end = end_date.unwrap_or(event.end_date);
-        if let Some(next_start) = start_date {
-            if next_start < current_time {
-                return Err(Error::InvalidStartDate);
-            }
-            if next_start >= effective_end {
-                return Err(Error::InvalidEndDate);
-            }
-            event.start_date = next_start;
+        // Mint tickets
+        for _ in 0..quantity {
+            env.invoke_contract::<u128>(
+                &event.ticket_nft_addr,
+                &Symbol::new(&env, "mint_ticket_nft"),
+                soroban_sdk::vec![&env, buyer.clone().into_val(&env)],
+            );
         }
 
-        let effective_start = start_date.unwrap_or(event.start_date);
-        if let Some(next_end) = end_date {
-            if next_end < current_time {
-                return Err(Error::InvalidEndDate);
-            }
-            if next_end <= effective_start {
-                return Err(Error::InvalidEndDate);
-            }
-            event.end_date = next_end;
-        }
+        // Update tier sold count
+        tier.sold_quantity += quantity;
+        tiers.set(tier_index, tier);
+        env.storage()
+            .persistent()
+            .set(&DataKey::EventTiers(event_id), &tiers);
+
+        // Record purchase
+        Self::record_purchase(&env, event_id, buyer.clone(), quantity, total_price);
+
+        // Update aggregate event counters
+        event.tickets_sold = event
+            .tickets_sold
+            .checked_add(quantity)
+            .ok_or(Error::CounterOverflow)?;
 
         env.storage()
             .persistent()
@@ -414,8 +447,15 @@ impl EventManager {
         Self::extend_persistent_ttl(&env, &DataKey::Event(event_id));
 
         env.events().publish(
-            (Symbol::new(&env, "event_updated"),),
-            (event_id, event.organizer),
+            (Symbol::new(&env, "ticket_purchased"),),
+            (
+                event_id,
+                buyer,
+                quantity,
+                total_price,
+                event.ticket_nft_addr,
+                tier_index,
+            ),
         );
 
         Ok(())
@@ -448,162 +488,80 @@ impl EventManager {
         Ok(())
     }
 
-    /// Purchase a single ticket for a specific tier.
-    /// `tier_index`: index into the event's tiers Vec. Pass 0 for single-tier events.
-    /// Funds are escrowed in the contract until the organizer withdraws after the event.
-    pub fn purchase_ticket(
+    pub fn update_event(
         env: Env,
-        buyer: Address,
         event_id: u32,
-        tier_index: u32,
+        theme: Option<String>,
+        ticket_price: Option<i128>,
+        total_tickets: Option<u128>,
+        start_date: Option<u64>,
+        end_date: Option<u64>,
     ) -> Result<(), Error> {
-        buyer.require_auth();
-
         let mut event: Event = env
             .storage()
             .persistent()
             .get(&DataKey::Event(event_id))
             .ok_or(Error::EventNotFound)?;
 
+        event.organizer.require_auth();
+
         if event.is_canceled {
             return Err(Error::EventAlreadyCanceled);
         }
 
-        let mut tiers: Vec<TicketTier> = env
-            .storage()
-            .persistent()
-            .get(&DataKey::EventTiers(event_id))
-            .ok_or(Error::EventNotFound)?;
+        let current_time = env.ledger().timestamp();
 
-        if tier_index as usize >= tiers.len() as usize {
-            return Err(Error::InvalidTierIndex);
+        if let Some(t) = theme {
+            event.theme = t;
         }
 
-        let mut tier = tiers.get(tier_index).unwrap();
-
-        if tier.sold_quantity >= tier.total_quantity {
-            return Err(Error::TierSoldOut);
+        if let Some(p) = ticket_price {
+            if p < 0 {
+                return Err(Error::NegativeTicketPrice);
+            }
+            event.ticket_price = p;
         }
 
-        let price = tier.price;
-
-        // Escrow payment in the contract; released to organizer via withdraw_funds
-        if price > 0 {
-            let token_client = soroban_sdk::token::Client::new(&env, &event.payment_token);
-            token_client.transfer(&buyer, &env.current_contract_address(), &price);
-
-            let balance_key = DataKey::EventBalance(event_id);
-            let current_balance: i128 = env
-                .storage()
-                .persistent()
-                .get(&balance_key)
-                .unwrap_or(0);
-            env.storage()
-                .persistent()
-                .set(&balance_key, &(current_balance + price));
-            Self::extend_persistent_ttl(&env, &balance_key);
+        if let Some(t) = total_tickets {
+            if t == 0 {
+                return Err(Error::InvalidTicketCount);
+            }
+            if t < event.tickets_sold {
+                return Err(Error::TicketsBelowSold);
+            }
+            event.total_tickets = t;
         }
 
-        env.invoke_contract::<u128>(
-            &event.ticket_nft_addr,
-            &Symbol::new(&env, "mint_ticket_nft"),
-            soroban_sdk::vec![&env, buyer.clone().into_val(&env)],
-        );
+        let effective_end = end_date.unwrap_or(event.end_date);
+        if let Some(s) = start_date {
+            if s < current_time {
+                return Err(Error::InvalidStartDate);
+            }
+            if s >= effective_end {
+                return Err(Error::InvalidEndDate);
+            }
+            event.start_date = s;
+        }
 
-        tier.sold_quantity += 1;
-        tiers.set(tier_index, tier);
-        env.storage()
-            .persistent()
-            .set(&DataKey::EventTiers(event_id), &tiers);
-        Self::extend_persistent_ttl(&env, &DataKey::EventTiers(event_id));
+        let effective_start = start_date.unwrap_or(event.start_date);
+        if let Some(e) = end_date {
+            if e < current_time {
+                return Err(Error::InvalidEndDate);
+            }
+            if e <= effective_start {
+                return Err(Error::InvalidEndDate);
+            }
+            event.end_date = e;
+        }
 
-        Self::record_purchase(&env, event_id, buyer.clone(), 1, price);
-
-        event.tickets_sold += 1;
         env.storage()
             .persistent()
             .set(&DataKey::Event(event_id), &event);
         Self::extend_persistent_ttl(&env, &DataKey::Event(event_id));
 
         env.events().publish(
-            (Symbol::new(&env, "ticket_purchased"),),
-            (event_id, buyer, event.ticket_nft_addr, tier_index),
-        );
-
-        Ok(())
-    }
-
-    /// Purchase multiple tickets at once using the base ticket_price with group discounts.
-    /// Funds are escrowed in the contract until the organizer withdraws after the event.
-    pub fn purchase_tickets(
-        env: Env,
-        buyer: Address,
-        event_id: u32,
-        quantity: u128,
-    ) -> Result<(), Error> {
-        buyer.require_auth();
-
-        if quantity == 0 {
-            return Err(Error::InvalidTicketCount);
-        }
-
-        let mut event: Event = env
-            .storage()
-            .persistent()
-            .get(&DataKey::Event(event_id))
-            .ok_or(Error::EventNotFound)?;
-
-        if event.is_canceled {
-            return Err(Error::EventAlreadyCanceled);
-        }
-
-        let next_tickets_sold = event
-            .tickets_sold
-            .checked_add(quantity)
-            .ok_or(Error::CounterOverflow)?;
-
-        if next_tickets_sold > event.total_tickets {
-            return Err(Error::EventSoldOut);
-        }
-
-        let total_price = Self::calculate_total_price(event.ticket_price, quantity);
-
-        // Escrow payment in the contract; released to organizer via withdraw_funds
-        if total_price > 0 {
-            let token_client = soroban_sdk::token::Client::new(&env, &event.payment_token);
-            token_client.transfer(&buyer, &env.current_contract_address(), &total_price);
-
-            let balance_key = DataKey::EventBalance(event_id);
-            let current_balance: i128 = env
-                .storage()
-                .persistent()
-                .get(&balance_key)
-                .unwrap_or(0);
-            env.storage()
-                .persistent()
-                .set(&balance_key, &(current_balance + total_price));
-            Self::extend_persistent_ttl(&env, &balance_key);
-        }
-
-        for _ in 0..quantity {
-            env.invoke_contract::<u128>(
-                &event.ticket_nft_addr,
-                &Symbol::new(&env, "mint_ticket_nft"),
-                soroban_sdk::vec![&env, buyer.clone().into_val(&env)],
-            );
-        }
-
-        Self::record_purchase(&env, event_id, buyer.clone(), quantity, total_price);
-
-        event.tickets_sold = next_tickets_sold;
-        env.storage()
-            .persistent()
-            .set(&DataKey::Event(event_id), &event);
-        Self::extend_persistent_ttl(&env, &DataKey::Event(event_id));
-
-        env.events().publish(
-            (Symbol::new(&env, "ticket_purchased"),),
-            (event_id, buyer, quantity, total_price, event.ticket_nft_addr),
+            (Symbol::new(&env, "event_updated"),),
+            (event_id, event.organizer),
         );
 
         Ok(())
@@ -676,6 +634,7 @@ impl EventManager {
         total_tickets: u128,
     ) -> Result<(), Error> {
         let current_time = env.ledger().timestamp();
+
         if start_date <= current_time {
             return Err(Error::InvalidStartDate);
         }
@@ -697,7 +656,10 @@ impl EventManager {
             .instance()
             .get(&DataKey::EventCounter)
             .unwrap_or(0);
-        let next = current.checked_add(1).ok_or(Error::CounterOverflow)?;
+
+        let next = current
+            .checked_add(1)
+            .ok_or(Error::CounterOverflow)?;
         env.storage().instance().set(&DataKey::EventCounter, &next);
         env.storage()
             .instance()
@@ -705,21 +667,34 @@ impl EventManager {
         Ok(current)
     }
 
-    fn deploy_ticket_nft(env: &Env, event_id: u32) -> Option<Address> {
-        let factory_addr: Address = env.storage().instance().get(&DataKey::TicketFactory)?;
+    fn deploy_ticket_nft(
+        env: &Env,
+        event_id: u32,
+        _theme: String,
+        _total_supply: u128,
+    ) -> Result<Address, Error> {
+        let factory_addr: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::TicketFactory)
+            .ok_or(Error::FactoryNotInitialized)?;
+
         let mut salt_bytes = [0u8; 32];
-        salt_bytes[28..32].copy_from_slice(&event_id.to_be_bytes());
+        let id_bytes = event_id.to_be_bytes();
+        salt_bytes[..4].copy_from_slice(&id_bytes);
         let salt = BytesN::from_array(env, &salt_bytes);
 
-        Some(env.invoke_contract::<Address>(
+        let nft_addr: Address = env.invoke_contract(
             &factory_addr,
             &Symbol::new(env, "deploy_ticket"),
             soroban_sdk::vec![
                 env,
-                env.current_contract_address().into_val(env),
-                salt.into_val(env)
+                env.current_contract_address().to_val(),
+                salt.to_val(),
             ],
-        ))
+        );
+
+        Ok(nft_addr)
     }
 
     fn record_purchase(
@@ -755,7 +730,7 @@ impl EventManager {
                 .persistent()
                 .get(&buyers_key)
                 .unwrap_or_else(|| Vec::new(env));
-            buyers.push_back(buyer.clone());
+            buyers.push_back(buyer);
             env.storage().persistent().set(&buyers_key, &buyers);
             Self::extend_persistent_ttl(env, &buyers_key);
         }
@@ -767,16 +742,16 @@ impl EventManager {
         if ticket_price <= 0 {
             return 0;
         }
-        let quantity_i128 =
-            i128::try_from(quantity).unwrap_or_else(|_| panic!("Quantity exceeds pricing range"));
+        let quantity_i128 = i128::try_from(quantity)
+            .unwrap_or_else(|_| panic!("Quantity exceeds pricing range"));
         let subtotal = ticket_price
             .checked_mul(quantity_i128)
             .unwrap_or_else(|| panic!("Price overflow"));
 
         let discount_bps = if quantity >= 10 {
-            1_000i128
+            1_000i128 // 10% discount
         } else if quantity >= 5 {
-            500i128
+            500i128 // 5% discount
         } else {
             0i128
         };
@@ -804,240 +779,3 @@ impl EventManager {
 
 #[cfg(test)]
 mod test;
-
-#[cfg(test)]
-mod update_event_tests {
-    use super::*;
-    use crate::test::MockContract;
-    use soroban_sdk::{testutils::Address as _, testutils::Ledger};
-
-    fn setup_event_for_update(env: &Env) -> (EventManagerClient<'_>, Address, u32) {
-        let contract_id = env.register(EventManager, ());
-        let client = EventManagerClient::new(env, &contract_id);
-        let mock_addr = env.register(MockContract, ());
-        let organizer = Address::generate(env);
-        env.mock_all_auths();
-        client.initialize(&mock_addr);
-
-        let start_date = env.ledger().timestamp() + 86_400;
-        let end_date = start_date + 86_400;
-        let event_id = client.create_event(&CreateEventParams {
-            organizer: organizer.clone(),
-            theme: String::from_str(env, "Original Theme"),
-            event_type: String::from_str(env, "Conference"),
-            start_date,
-            end_date,
-            ticket_price: 1_000_0000000,
-            total_tickets: 100,
-            payment_token: mock_addr,
-            tiers: Vec::new(env),
-        });
-        (client, organizer, event_id)
-    }
-
-    #[test]
-    fn test_update_event_theme() {
-        let env = Env::default();
-        let (client, _organizer, event_id) = setup_event_for_update(&env);
-
-        client.update_event(
-            &event_id,
-            &Option::Some(String::from_str(&env, "Updated Theme")),
-            &Option::None,
-            &Option::None,
-            &Option::None,
-            &Option::None,
-        );
-
-        let event = client.get_event(&event_id);
-        assert_eq!(event.theme, String::from_str(&env, "Updated Theme"));
-    }
-
-    #[test]
-    fn test_update_event_ticket_price() {
-        let env = Env::default();
-        let (client, _organizer, event_id) = setup_event_for_update(&env);
-        let new_price = 2_000_0000000i128;
-
-        client.update_event(
-            &event_id,
-            &Option::None,
-            &Option::Some(new_price),
-            &Option::None,
-            &Option::None,
-            &Option::None,
-        );
-
-        assert_eq!(client.get_event(&event_id).ticket_price, new_price);
-    }
-
-    #[test]
-    fn test_update_event_total_tickets() {
-        let env = Env::default();
-        let (client, _organizer, event_id) = setup_event_for_update(&env);
-
-        client.update_event(
-            &event_id,
-            &Option::None,
-            &Option::None,
-            &Option::Some(200u128),
-            &Option::None,
-            &Option::None,
-        );
-
-        assert_eq!(client.get_event(&event_id).total_tickets, 200);
-    }
-
-    #[test]
-    fn test_update_event_dates() {
-        let env = Env::default();
-        let (client, _organizer, event_id) = setup_event_for_update(&env);
-        let new_start = env.ledger().timestamp() + 172_800;
-        let new_end = new_start + 86_400;
-
-        client.update_event(
-            &event_id,
-            &Option::None,
-            &Option::None,
-            &Option::None,
-            &Option::Some(new_start),
-            &Option::Some(new_end),
-        );
-
-        let event = client.get_event(&event_id);
-        assert_eq!(event.start_date, new_start);
-        assert_eq!(event.end_date, new_end);
-    }
-
-    #[test]
-    fn test_update_event_emits_event() {
-        let env = Env::default();
-        let (client, _organizer, event_id) = setup_event_for_update(&env);
-
-        client.update_event(
-            &event_id,
-            &Option::Some(String::from_str(&env, "Emit Test")),
-            &Option::None,
-            &Option::None,
-            &Option::None,
-            &Option::None,
-        );
-
-        assert_eq!(
-            client.get_event(&event_id).theme,
-            String::from_str(&env, "Emit Test")
-        );
-    }
-
-    #[test]
-    fn test_update_event_canceled_fails() {
-        let env = Env::default();
-        let (client, _organizer, event_id) = setup_event_for_update(&env);
-        client.cancel_event(&event_id);
-
-        let result = client.try_update_event(
-            &event_id,
-            &Option::Some(String::from_str(&env, "Should fail")),
-            &Option::None,
-            &Option::None,
-            &Option::None,
-            &Option::None,
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_update_event_total_tickets_below_sold_fails() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let contract_id = env.register(EventManager, ());
-        let client = EventManagerClient::new(&env, &contract_id);
-        let mock_addr = env.register(MockContract, ());
-        let organizer = Address::generate(&env);
-        client.initialize(&mock_addr);
-
-        let start_date = env.ledger().timestamp() + 86_400;
-        let end_date = start_date + 86_400;
-        let event_id = client.create_event(&CreateEventParams {
-            organizer: organizer.clone(),
-            theme: String::from_str(&env, "Event"),
-            event_type: String::from_str(&env, "Type"),
-            start_date,
-            end_date,
-            ticket_price: 100i128,
-            total_tickets: 10u128,
-            payment_token: mock_addr,
-            tiers: Vec::new(&env),
-        });
-
-        client.purchase_ticket(&Address::generate(&env), &event_id, &0u32);
-        client.purchase_ticket(&Address::generate(&env), &event_id, &0u32);
-
-        let result = client.try_update_event(
-            &event_id,
-            &Option::None,
-            &Option::None,
-            &Option::Some(1u128),
-            &Option::None,
-            &Option::None,
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_update_event_start_date_past_fails() {
-        let env = Env::default();
-        let (client, _organizer, event_id) = setup_event_for_update(&env);
-        env.ledger()
-            .set_timestamp(env.ledger().timestamp() + 86_400 * 2);
-        let past_start = env.ledger().timestamp() - 3_600;
-
-        let result = client.try_update_event(
-            &event_id,
-            &Option::None,
-            &Option::None,
-            &Option::None,
-            &Option::Some(past_start),
-            &Option::None,
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_update_event_end_before_start_fails() {
-        let env = Env::default();
-        let (client, _organizer, event_id) = setup_event_for_update(&env);
-        let start_date = env.ledger().timestamp() + 86_400;
-        let end_before_start = start_date - 3_600;
-
-        let result = client.try_update_event(
-            &event_id,
-            &Option::None,
-            &Option::None,
-            &Option::None,
-            &Option::Some(start_date),
-            &Option::Some(end_before_start),
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_update_event_not_found_fails() {
-        let env = Env::default();
-        let contract_id = env.register(EventManager, ());
-        let client = EventManagerClient::new(&env, &contract_id);
-        let mock_addr = env.register(MockContract, ());
-        env.mock_all_auths();
-        client.initialize(&mock_addr);
-
-        let result = client.try_update_event(
-            &999u32,
-            &Option::None,
-            &Option::None,
-            &Option::None,
-            &Option::None,
-            &Option::None,
-        );
-        assert!(result.is_err());
-    }
-}

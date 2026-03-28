@@ -4,6 +4,9 @@
 
 *Secure, transparent, and fraud-proof event management powered by blockchain technology*
 
+[![CI](https://github.com/crowdpass-live/tokenbound_impl/actions/workflows/ci.yml/badge.svg)](https://github.com/crowdpass-live/tokenbound_impl/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/crowdpass-live/tokenbound_impl/graph/badge.svg?branch=main)](https://codecov.io/gh/crowdpass-live/tokenbound_impl)
+
 
 ## Overview
 
@@ -188,6 +191,24 @@ npm run dev
 - `make docker-up` - Spin up local development environment
 - `make docker-down` - Stop local environment
 - `make lint` - Run linters
+
+### Coverage Reporting
+
+CI publishes coverage reports for the Soroban contracts and the Next.js frontend to Codecov.
+
+- Rust coverage runs with `cargo-llvm-cov` in `soroban-contract`
+- Frontend coverage runs with Jest in `soroban-client`
+- CI enforces a minimum 70% line coverage floor for both stacks
+
+Run coverage locally with:
+
+```bash
+cd soroban-client
+npm run test:coverage
+
+cd ../soroban-contract
+cargo llvm-cov --workspace --lcov --output-path coverage/lcov.info --fail-under-lines 70
+```
 
 ## Use Cases
 

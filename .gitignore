@@ -1,4 +1,6 @@
 soroban.tar.gz
+node_modules/
+.husky/_/
 
 # Environment variable files
 .env

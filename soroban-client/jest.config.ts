@@ -11,6 +11,17 @@ const config: Config = {
   coverageProvider: 'v8',
   testEnvironment: 'jsdom',
   setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
+  collectCoverage: false,
+  coverageDirectory: '<rootDir>/coverage',
+  coverageReporters: ['text-summary', 'lcov', 'json-summary'],
+  coverageThreshold: {
+    global: {
+      branches: 70,
+      functions: 70,
+      lines: 70,
+      statements: 70,
+    },
+  },
   moduleNameMapper: {
     // Handle module aliases
     '^@/(.*)$': '<rootDir>/$1',

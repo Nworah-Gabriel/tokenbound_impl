@@ -1,10 +1,11 @@
+// contexts/walletAdapters.ts
 import {
   isConnected as freighterIsConnected,
   requestAccess as freighterRequestAccess,
   signTransaction as freighterSignTransaction,
 } from "@stellar/freighter-api";
 
-export type WalletProviderId = "freighter" | "xbull" | "albedo" | "walletconnect";
+export type WalletProviderId = "freighter";
 
 export interface WalletProviderInfo {
   id: WalletProviderId;
@@ -16,23 +17,20 @@ export interface WalletProviderInfo {
 
 declare global {
   interface Window {
-    freighter?: unknown;
-    xbull?: {
+    freighter?: {
+      isConnected?: () => Promise<{ isConnected: boolean }>;
       getPublicKey?: () => Promise<string>;
-      publicKey?: () => Promise<string>;
-      connect?: () => Promise<{ publicKey: string }>;
-      signTransaction?: (xdr: string, opts: Record<string, unknown>) => Promise<{ signedXdr: string }>;
-      request?: (payload: unknown) => Promise<unknown>;
+      requestAccess?: () => Promise<{ address: string }>;
+      signTransaction?: (xdr: string, opts: { networkPassphrase: string; address?: string }) => Promise<{ signedTxXdr: string }>;
     };
-    Albedo?: {
-      publicKey?: () => Promise<string>;
-      signTransaction?: (params: { xdr: string; network_passphrase: string }) => Promise<{ signed_xdr: string }>;
+    stellar?: {
+      freighter?: {
+        isConnected?: () => Promise<{ isConnected: boolean }>;
+        getPublicKey?: () => Promise<string>;
+        requestAccess?: () => Promise<{ address: string }>;
+        signTransaction?: (xdr: string, opts: { networkPassphrase: string; address?: string }) => Promise<{ signedTxXdr: string }>;
+      };
     };
-    albedo?: {
-      publicKey?: () => Promise<string>;
-      signTransaction?: (params: { xdr: string; network_passphrase: string }) => Promise<{ signed_xdr: string }>;
-    };
-    WalletConnectProvider?: unknown;
   }
 }
 
@@ -44,27 +42,6 @@ export const ALL_WALLET_PROVIDERS: Array<WalletProviderInfo> = [
     installed: false,
     description: "Browser extension for Stellar accounts.",
   },
-  {
-    id: "xbull",
-    name: "xBull",
-    installUrl: "https://wallet.xbull.app/",
-    installed: false,
-    description: "Stellar wallet extension and web wallet.",
-  },
-  {
-    id: "albedo",
-    name: "Albedo",
-    installUrl: "https://albedo.link/",
-    installed: false,
-    description: "Decentralized Stellar wallet interface.",
-  },
-  {
-    id: "walletconnect",
-    name: "WalletConnect",
-    installUrl: "https://walletconnect.com/",
-    installed: true,
-    description: "Connect using WalletConnect QR code session.",
-  },
 ];
 
 export async function detectAvailableWalletProviders(): Promise<WalletProviderInfo[]> {
@@ -72,34 +49,39 @@ export async function detectAvailableWalletProviders(): Promise<WalletProviderIn
     return ALL_WALLET_PROVIDERS.map((wallet) => ({ ...wallet, installed: false }));
   }
 
-  const freighterInstalled = Boolean(window.freighter);
-  const xbullInstalled = Boolean(window.xbull);
-  const albedoInstalled = Boolean(window.Albedo || window.albedo);
-
-  let freighterActive = false;
+  console.log("Detecting wallet providers...");
+  console.log("window.freighter:", window.freighter);
+  console.log("window.stellar:", window.stellar);
+  
+  // Check multiple possible locations for Freighter
+  const freighterInstalled = Boolean(
+    window.freighter || 
+    (window.stellar && window.stellar.freighter) ||
+    (window as any).freighterWallet
+  );
+  
+  console.log("Freighter installed detected:", freighterInstalled);
+  
+  // Try to verify connection if installed
   if (freighterInstalled) {
     try {
-      const result = await freighterIsConnected();
-      freighterActive = !!result?.isConnected;
-    } catch {
-      freighterActive = true; // still provide path if extension object exists
+      // Try different ways to check connection
+      if (window.freighter && window.freighter.isConnected) {
+        const result = await window.freighter.isConnected();
+        console.log("Freighter isConnected result:", result);
+      } else if (window.stellar && window.stellar.freighter && window.stellar.freighter.isConnected) {
+        const result = await window.stellar.freighter.isConnected();
+        console.log("Freighter (stellar) isConnected result:", result);
+      }
+    } catch (error) {
+      console.error("Error checking Freighter connection:", error);
     }
   }
 
-  return ALL_WALLET_PROVIDERS.map((wallet) => {
-    switch (wallet.id) {
-      case "freighter":
-        return { ...wallet, installed: freighterInstalled || freighterActive };
-      case "xbull":
-        return { ...wallet, installed: xbullInstalled };
-      case "albedo":
-        return { ...wallet, installed: albedoInstalled };
-      case "walletconnect":
-        return { ...wallet, installed: true };
-      default:
-        return { ...wallet, installed: false };
-    }
-  });
+  return ALL_WALLET_PROVIDERS.map((wallet) => ({
+    ...wallet,
+    installed: freighterInstalled,
+  }));
 }
 
 export async function connectWallet(providerId: WalletProviderId): Promise<string> {
@@ -107,48 +89,51 @@ export async function connectWallet(providerId: WalletProviderId): Promise<strin
     throw new Error("Wallet connection unavailable on server side.");
   }
 
+  console.log("Connecting to wallet:", providerId);
+  
   switch (providerId) {
     case "freighter": {
-      if (!window.freighter) {
-        throw new Error("Freighter is not installed.");
+      // Try to get Freighter from various possible locations
+      const freighter = window.freighter || 
+                        (window.stellar && window.stellar.freighter) ||
+                        (window as any).freighterWallet;
+      
+      if (!freighter) {
+        console.error("Freighter object not found. Available:", {
+          freighter: window.freighter,
+          stellar: window.stellar,
+          freighterWallet: (window as any).freighterWallet
+        });
+        throw new Error("Freighter is not installed. Please install the Freighter extension.");
       }
-      const response = await freighterRequestAccess();
-      if (response?.address) {
-        return response.address;
-      }
-      throw new Error(response?.error || "Failed to connect to Freighter.");
-    }
-
-    case "xbull": {
-      if (!window.xbull) {
-        throw new Error("xBull wallet is not installed.");
-      }
-      const publicKeyFn = window.xbull.getPublicKey || window.xbull.publicKey;
-      if (publicKeyFn) {
-        return await publicKeyFn();
-      }
-      if (window.xbull.connect) {
-        const result = await window.xbull.connect();
-        if (result?.publicKey) {
-          return result.publicKey;
+      
+      console.log("Found Freighter object:", freighter);
+      
+      // Try to request access
+      try {
+        let response;
+        
+        if (freighter.requestAccess) {
+          response = await freighter.requestAccess();
+          console.log("Freighter requestAccess response:", response);
+        } else if (freighter.getPublicKey) {
+          const publicKey = await freighter.getPublicKey();
+          console.log("Freighter getPublicKey response:", publicKey);
+          response = { address: publicKey };
+        } else {
+          throw new Error("Freighter API not available. Please update your Freighter extension.");
         }
+        
+        if (response?.address) {
+          console.log("Successfully connected to Freighter:", response.address);
+          return response.address;
+        }
+        
+        throw new Error(response?.error || "Failed to connect to Freighter. Please ensure you have unlocked Freighter.");
+      } catch (error: any) {
+        console.error("Freighter connection error:", error);
+        throw new Error(error.message || "Failed to connect to Freighter. Please check if Freighter is unlocked.");
       }
-      throw new Error("xBull wallet could not provide public key.");
-    }
-
-    case "albedo": {
-      const albedo = window.Albedo || window.albedo;
-      if (!albedo || !albedo.publicKey) {
-        throw new Error("Albedo wallet is not installed or unavailable.");
-      }
-      const pk = await albedo.publicKey();
-      if (!pk) throw new Error("Albedo did not return a public key.");
-      return pk;
-    }
-
-    case "walletconnect": {
-      // WalletConnect is supported via external wallet. We expose a hint to open user flow.
-      throw new Error("WalletConnect sign-in flow is not implemented in this build. Use a wallet provider extension.");
     }
 
     default:
@@ -167,48 +152,28 @@ export async function signTransactionWithProvider(
 
   switch (providerId) {
     case "freighter": {
-      const result = await freighterSignTransaction(txXdr, {
+      const freighter = window.freighter || 
+                        (window.stellar && window.stellar.freighter) ||
+                        (window as any).freighterWallet;
+      
+      if (!freighter) {
+        throw new Error("Freighter is not installed.");
+      }
+      
+      if (!freighter.signTransaction) {
+        throw new Error("Freighter signTransaction API not available.");
+      }
+      
+      const result = await freighter.signTransaction(txXdr, {
         networkPassphrase: options.networkPassphrase,
         address: options.address,
       });
+      
       if (!result?.signedTxXdr) {
         throw new Error("Freighter failed to sign transaction.");
       }
+      
       return result.signedTxXdr;
-    }
-
-    case "xbull": {
-      if (!window.xbull?.signTransaction) {
-        throw new Error("xBull does not support signTransaction from this interface.");
-      }
-      const res = await window.xbull.signTransaction(txXdr, {
-        networkPassphrase: options.networkPassphrase,
-        address: options.address,
-      });
-      if (!res?.signedXdr) {
-        throw new Error("xBull failed to sign transaction.");
-      }
-      return res.signedXdr;
-    }
-
-    case "albedo": {
-      const albedo = window.Albedo || window.albedo;
-      if (!albedo?.signTransaction) {
-        throw new Error("Albedo does not support contract transaction signing through this interface.");
-      }
-      const payload = await albedo.signTransaction({
-        xdr: txXdr,
-        network_passphrase: options.networkPassphrase,
-      });
-      if (!payload?.signed_xdr) {
-        throw new Error("Albedo failed to sign transaction.");
-      }
-      return payload.signed_xdr;
-    }
-
-    case "walletconnect": {
-      // WalletConnect can be integrated with a provider in a separate module.
-      throw new Error("WalletConnect transaction signing is currently not implemented in this repository.");
     }
 
     default:

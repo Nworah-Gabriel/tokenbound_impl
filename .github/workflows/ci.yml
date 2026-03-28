@@ -66,9 +66,18 @@ jobs:
           # Add any required env vars for Next.js build
           # NEXT_PUBLIC_STELLAR_NETWORK: testnet
 
-      - name: Run tests
-        run: npm test -- --passWithNoTests
+      - name: Run tests with coverage
+        run: npm run test:coverage -- --passWithNoTests
         if: hashFiles('soroban-client/package.json') != ''
+
+      - name: Upload frontend coverage to Codecov
+        if: hashFiles('soroban-client/coverage/lcov.info') != ''
+        uses: codecov/codecov-action@v5
+        with:
+          files: soroban-client/coverage/lcov.info
+          flags: frontend
+          name: frontend-coverage
+          fail_ci_if_error: true
 
   client-e2e:
     name: Client E2E Tests
@@ -143,6 +152,10 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
+          components: llvm-tools-preview
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Install system dependencies
         run: |
@@ -176,9 +189,18 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
         continue-on-error: true
 
-      - name: Run contract tests
+      - name: Run contract tests with coverage
         working-directory: soroban-contract
-        run: cargo test --workspace
+        run: cargo llvm-cov --workspace --lcov --output-path coverage/lcov.info --fail-under-lines 70
+
+      - name: Upload Rust coverage to Codecov
+        if: hashFiles('soroban-contract/coverage/lcov.info') != ''
+        uses: codecov/codecov-action@v5
+        with:
+          files: soroban-contract/coverage/lcov.info
+          flags: rust
+          name: rust-coverage
+          fail_ci_if_error: true
 
   integration:
     name: Integration Tests
