@@ -13,7 +13,7 @@ CrowdPass includes multiple frontend implementations and client libraries to int
 ## Shared Logic
 
 The frontend clients share several core functionalities:
-- **Wallet Connection**: Using Freighter or other Stellar wallet providers.
+- **Wallet Connection**: Using Freighter, xBull, Albedo, or WalletConnect with a unified wallet adapter.
 - **Contract Interaction**: Invoking Soroban functions for ticket purchase, event creation, etc.
 - **TBA Management**: Viewing and managing assets held by ticket-bound accounts.
 

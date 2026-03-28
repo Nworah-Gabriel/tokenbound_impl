@@ -1,221 +1,277 @@
 "use client";
 
-import React, { useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
+import AnalyticsPageView from "@/components/AnalyticsPageView";
+import Header from "@/components/Header";
 import { useWallet } from "@/contexts/WalletContext";
 import { createEvent } from "@/lib/soroban";
 
+const eventSchema = z
+  .object({
+    theme: z.string().min(1, "Event name required"),
+    description: z.string().optional(),
+    startDate: z.string().min(1, "Start date is required"),
+    endDate: z.string().min(1, "End date is required"),
+    price: z
+      .string()
+      .min(1, "Price required")
+      .refine((s) => !Number.isNaN(parseFloat(s)), "Price must be a number")
+      .refine((s) => parseFloat(s) >= 0, "Price cannot be negative")
+      .refine((s) => parseFloat(s) <= 1_000_000, "Price is too high"),
+    tickets: z
+      .string()
+      .min(1, "Total tickets required")
+      .refine((s) => /^[0-9]+$/.test(s), "Tickets must be a whole number")
+      .refine((s) => parseInt(s, 10) > 0, "Must be a positive integer"),
+  })
+  .superRefine((data, ctx) => {
+    if (data.startDate) {
+      const start = new Date(data.startDate).getTime();
+      if (start <= Date.now()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["startDate"],
+          message: "Start date must be in the future",
+        });
+      }
+    }
+
+    if (data.startDate && data.endDate) {
+      const start = new Date(data.startDate).getTime();
+      const end = new Date(data.endDate).getTime();
+      if (end <= start) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["endDate"],
+          message: "End date must be after start date",
+        });
+      }
+    }
+  });
+
+type EventFormData = z.infer<typeof eventSchema>;
+
 export default function CreateEventPage() {
   const router = useRouter();
-  const { address, isConnected, isInstalled, connect } = useWallet();
+  const { address, isInstalled, connect, providerName, signTransaction } =
+    useWallet();
 
-  const [theme, setTheme] = useState("");
-  const [description, setDescription] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
-  const [price, setPrice] = useState("");
-  const [tickets, setTickets] = useState("");
-  const [image, setImage] = useState<File | null>(null);
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isValid, isSubmitting },
+  } = useForm<EventFormData>({
+    resolver: zodResolver(eventSchema),
+    mode: "onChange",
+  });
 
-  const [errors, setErrors] = useState<{ [key: string]: string }>({});
-  const [submitting, setSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
 
-  const validate = () => {
-    const errs: { [key: string]: string } = {};
-    const now = Date.now();
+  const onSubmit = async (data: EventFormData) => {
+    let organizerAddress = address;
 
-    if (!theme.trim()) errs.theme = "Event name required";
-    if (!startDate) errs.startDate = "Start date is required";
-    if (!endDate) errs.endDate = "End date is required";
-    if (startDate && new Date(startDate).getTime() <= now)
-      errs.startDate = "Start date must be in the future";
-    if (startDate && endDate && new Date(endDate) <= new Date(startDate))
-      errs.endDate = "End date must be after start date";
-    if (!price) errs.price = "Price required";
-    if (price && isNaN(Number(price))) errs.price = "Price must be a number";
-    if (price && Number(price) < 0) errs.price = "Price cannot be negative";
-    if (!tickets) errs.tickets = "Total tickets required";
-    if (tickets && (!/^[0-9]+$/.test(tickets) || Number(tickets) <= 0))
-      errs.tickets = "Must be a positive integer";
-
-    return errs;
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!address) {
+    if (!organizerAddress) {
       if (isInstalled) {
         await connect();
+        organizerAddress = localStorage.getItem("wallet_address");
       } else {
-        alert("Please install Freighter to create an event.");
+        alert(
+          `Please install ${providerName} (or another Stellar wallet) to create an event.`
+        );
         return;
       }
     }
-    const errs = validate();
-    if (Object.keys(errs).length) {
-      setErrors(errs);
+
+    if (!organizerAddress) {
+      setErrorMsg("Connect your wallet before creating an event.");
       return;
     }
-    setErrors({});
-    setSubmitting(true);
+
     setErrorMsg("");
     setSuccessMsg("");
 
     try {
-      const organizer = address!;
-      const startUnix = Math.floor(new Date(startDate).getTime() / 1000);
-      const endUnix = Math.floor(new Date(endDate).getTime() / 1000);
-      const ticketPrice = BigInt(Math.floor(parseFloat(price) * 1_000_000));
-      const totalTickets = BigInt(tickets);
+      const startUnix = Math.floor(new Date(data.startDate).getTime() / 1000);
+      const endUnix = Math.floor(new Date(data.endDate).getTime() / 1000);
+      const ticketPrice = BigInt(
+        Math.floor(parseFloat(data.price) * 10_000_000)
+      );
+      const totalTickets = BigInt(parseInt(data.tickets, 10));
 
-      // for simplicity we use zero address as payment token; replace with real
-      // token contract address or allow user selection later.
-      const paymentToken = "0000000000000000000000000000000000000000000000000000000000000000";
+      const paymentToken =
+        "0000000000000000000000000000000000000000000000000000000000000000";
 
-      const res = await createEvent({
-        organizer,
-        theme,
-        eventType: description,
-        startTimeUnix: startUnix,
-        endTimeUnix: endUnix,
-        ticketPrice,
-        totalTickets,
-        paymentToken,
-      });
+      const res = await createEvent(
+        {
+          organizer: organizerAddress,
+          theme: data.theme,
+          eventType: data.description || "",
+          startTimeUnix: startUnix,
+          endTimeUnix: endUnix,
+          ticketPrice,
+          totalTickets,
+          paymentToken,
+        },
+        signTransaction
+      );
 
-      console.log("transaction result", res);
-      setSuccessMsg("Event created (tx " + res.hash + ")");
-      // Optionally redirect to dashboard or home after creation
+      setSuccessMsg(`Event created (ledger ${res.ledger}, tx ${res.hash})`);
       setTimeout(() => router.push("/"), 3000);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      setErrorMsg(err.message || "unknown error");
-    } finally {
-      setSubmitting(false);
+      const message =
+        err && typeof err === "object" && "message" in err
+          ? String((err as { message?: string }).message)
+          : "Unknown error";
+      setErrorMsg(message);
     }
   };
 
   return (
-    <div className="max-w-xl mx-auto p-6">
-      <h1 className="text-2xl font-bold mb-4">Create Event</h1>
+    <div className="min-h-screen bg-[#18181B] text-white selection:bg-[#FF5722] selection:text-white">
+      <AnalyticsPageView page="create-event" />
+      <Header />
 
-      {successMsg && (
-        <div className="bg-green-100 text-green-800 p-2 mb-4">{successMsg}</div>
-      )}
-      {errorMsg && (
-        <div className="bg-red-100 text-red-800 p-2 mb-4">{errorMsg}</div>
-      )}
+      <main className="mx-auto max-w-3xl px-4 pb-20 pt-36 sm:px-6">
+        <div className="rounded-[32px] border border-white/10 bg-white/5 p-8 shadow-xl shadow-black/20">
+          <h1 className="mb-2 text-3xl font-bold">Create Event</h1>
+          <p className="mb-6 text-zinc-300">
+            Launch a new CrowdPass experience with on-chain pricing, inventory,
+            and organizer ownership.
+          </p>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700">
-            Event Name
-          </label>
-          <input
-            type="text"
-            value={theme}
-            onChange={(e) => setTheme(e.target.value)}
-            className="mt-1 block w-full border-gray-300 rounded-md shadow-sm"
-          />
-          {errors.theme && (
-            <p className="text-red-600 text-sm">{errors.theme}</p>
+          {successMsg && (
+            <div className="mb-4 rounded-2xl bg-green-500/15 p-3 text-green-200">
+              {successMsg}
+            </div>
           )}
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700">
-            Description
-          </label>
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            className="mt-1 block w-full border-gray-300 rounded-md shadow-sm"
-            rows={3}
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700">
-            Start Date &amp; Time
-          </label>
-          <input
-            type="datetime-local"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            className="mt-1 block w-full border-gray-300 rounded-md shadow-sm"
-          />
-          {errors.startDate && (
-            <p className="text-red-600 text-sm">{errors.startDate}</p>
+          {errorMsg && (
+            <div className="mb-4 rounded-2xl bg-red-500/15 p-3 text-red-200">
+              {errorMsg}
+            </div>
           )}
-        </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700">
-            End Date &amp; Time
-          </label>
-          <input
-            type="datetime-local"
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-            className="mt-1 block w-full border-gray-300 rounded-md shadow-sm"
-          />
-          {errors.endDate && (
-            <p className="text-red-600 text-sm">{errors.endDate}</p>
-          )}
-        </div>
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+              <div className="md:col-span-2">
+                <label className="mb-2 block text-sm font-medium text-gray-300">
+                  Event Name
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g., Stellar DevCon 2026"
+                  {...register("theme")}
+                  className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-white placeholder-gray-500 transition focus:border-[#FF5722] focus:outline-none focus:ring-2 focus:ring-[#FF5722]/50"
+                />
+                {errors.theme && (
+                  <p className="mt-1.5 text-sm text-red-400">
+                    {errors.theme.message}
+                  </p>
+                )}
+              </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700">
-            Ticket Price (XLM)
-          </label>
-          <input
-            type="number"
-            step="0.000001"
-            value={price}
-            onChange={(e) => setPrice(e.target.value)}
-            className="mt-1 block w-full border-gray-300 rounded-md shadow-sm"
-          />
-          {errors.price && (
-            <p className="text-red-600 text-sm">{errors.price}</p>
-          )}
-        </div>
+              <div className="md:col-span-2">
+                <label className="mb-2 block text-sm font-medium text-gray-300">
+                  Description
+                </label>
+                <textarea
+                  {...register("description")}
+                  placeholder="Tell your audience about the event..."
+                  rows={4}
+                  className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-white placeholder-gray-500 transition focus:border-[#FF5722] focus:outline-none focus:ring-2 focus:ring-[#FF5722]/50"
+                />
+              </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700">
-            Total Tickets
-          </label>
-          <input
-            type="number"
-            value={tickets}
-            onChange={(e) => setTickets(e.target.value)}
-            className="mt-1 block w-full border-gray-300 rounded-md shadow-sm"
-          />
-          {errors.tickets && (
-            <p className="text-red-600 text-sm">{errors.tickets}</p>
-          )}
-        </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-gray-300">
+                  Start Date &amp; Time
+                </label>
+                <input
+                  type="datetime-local"
+                  {...register("startDate")}
+                  className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-white transition [color-scheme:dark] focus:border-[#FF5722] focus:outline-none focus:ring-2 focus:ring-[#FF5722]/50"
+                />
+                {errors.startDate && (
+                  <p className="mt-1.5 text-sm text-red-400">
+                    {errors.startDate.message}
+                  </p>
+                )}
+              </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700">
-            Event Image (optional)
-          </label>
-          <input
-            type="file"
-            accept="image/*"
-            onChange={(e) => setImage(e.target.files?.[0] || null)}
-          />
-        </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-gray-300">
+                  End Date &amp; Time
+                </label>
+                <input
+                  type="datetime-local"
+                  {...register("endDate")}
+                  className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-white transition [color-scheme:dark] focus:border-[#FF5722] focus:outline-none focus:ring-2 focus:ring-[#FF5722]/50"
+                />
+                {errors.endDate && (
+                  <p className="mt-1.5 text-sm text-red-400">
+                    {errors.endDate.message}
+                  </p>
+                )}
+              </div>
 
-        <button
-          type="submit"
-          disabled={submitting}
-          className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-md disabled:opacity-50"
-        >
-          {submitting ? "Creating..." : "Create Event"}
-        </button>
-      </form>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-gray-300">
+                  Ticket Price (XLM)
+                </label>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 font-medium text-gray-400">
+                    XLM
+                  </span>
+                  <input
+                    type="number"
+                    step="0.0000001"
+                    placeholder="0.00"
+                    {...register("price")}
+                    className="w-full rounded-xl border border-white/10 bg-black/20 py-3 pl-12 pr-4 text-white placeholder-gray-500 transition focus:border-[#FF5722] focus:outline-none focus:ring-2 focus:ring-[#FF5722]/50"
+                  />
+                </div>
+                {errors.price && (
+                  <p className="mt-1.5 text-sm text-red-400">
+                    {errors.price.message}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-gray-300">
+                  Total Tickets
+                </label>
+                <input
+                  type="number"
+                  placeholder="e.g., 500"
+                  {...register("tickets")}
+                  className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-white placeholder-gray-500 transition focus:border-[#FF5722] focus:outline-none focus:ring-2 focus:ring-[#FF5722]/50"
+                />
+                {errors.tickets && (
+                  <p className="mt-1.5 text-sm text-red-400">
+                    {errors.tickets.message}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={
+                isSubmitting || (!isValid && Object.keys(errors).length > 0)
+              }
+              className="w-full rounded-xl bg-[#FF5722] px-6 py-4 text-lg font-bold text-white shadow-[0_0_20px_rgba(255,87,34,0.3)] transition hover:-translate-y-0.5 hover:bg-[#F4511E] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
+            >
+              {isSubmitting ? "Creating…" : "Launch Event"}
+            </button>
+          </form>
+        </div>
+      </main>
     </div>
   );
 }

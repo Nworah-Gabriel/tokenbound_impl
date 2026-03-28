@@ -19,6 +19,7 @@ import { useContract } from "@starknet-react/core";
 import { Contract, RpcProvider } from 'starknet'
 import eventAbi from './Abis/eventAbi.json'
 import strkAbi from './Abis/strkAbi.json'
+import ErrorBoundary from './Components/shared/error-boundary.jsx'
 
 
 const App = () => {
@@ -42,16 +43,56 @@ const App = () => {
     <StarknetProvider>
       <KitContext.Provider value={{connect, disconnect, connectors, address, account, contract, contractAddr, eventAbi, eventContract, readEventContract, strkContract}}>
       <Routes>
-        <Route path="/" element={status == 'disconnected' ? <LandingPage /> : <Dashboard />} />
-        <Route path="/event/:slug" element={<StaticEventDetailsPage />} />
-        <Route path="/dashboard" element={status == 'disconnected' ? <LandingPage /> : <Dashboard />} />
-        <Route path="/analytics" element={status == 'disconnected' ? <LandingPage /> : <Analytics />} />
-        <Route path="/discover" element={status == 'disconnected' ? <LandingPage /> : <Discover />} />
-        <Route path="/events" element={status == 'disconnected' ? <LandingPage /> : <Events />} />
-        <Route path="/events/:id" element={status == 'disconnected' ? <LandingPage /> : <EventDetails />} />
-        <Route path="/create-events" element={status == 'disconnected' ? <LandingPage /> : <CreateEvent />} />
-        <Route path="/settings" element={status == 'disconnected' ? <LandingPage /> : <Settings />} />
-        <Route path="/tickets" element={status == 'disconnected' ? <LandingPage /> : <Tickets />} />
+        <Route path="/" element={
+          <ErrorBoundary>
+            {status == 'disconnected' ? <LandingPage /> : <Dashboard />}
+          </ErrorBoundary>
+        } />
+        <Route path="/event/:slug" element={
+          <ErrorBoundary>
+            <StaticEventDetailsPage />
+          </ErrorBoundary>
+        } />
+        <Route path="/dashboard" element={
+          <ErrorBoundary>
+            {status == 'disconnected' ? <LandingPage /> : <Dashboard />}
+          </ErrorBoundary>
+        } />
+        <Route path="/analytics" element={
+          <ErrorBoundary>
+            {status == 'disconnected' ? <LandingPage /> : <Analytics />}
+          </ErrorBoundary>
+        } />
+        <Route path="/discover" element={
+          <ErrorBoundary>
+            {status == 'disconnected' ? <LandingPage /> : <Discover />}
+          </ErrorBoundary>
+        } />
+        <Route path="/events" element={
+          <ErrorBoundary>
+            {status == 'disconnected' ? <LandingPage /> : <Events />}
+          </ErrorBoundary>
+        } />
+        <Route path="/events/:id" element={
+          <ErrorBoundary>
+            {status == 'disconnected' ? <LandingPage /> : <EventDetails />}
+          </ErrorBoundary>
+        } />
+        <Route path="/create-events" element={
+          <ErrorBoundary>
+            {status == 'disconnected' ? <LandingPage /> : <CreateEvent />}
+          </ErrorBoundary>
+        } />
+        <Route path="/settings" element={
+          <ErrorBoundary>
+            {status == 'disconnected' ? <LandingPage /> : <Settings />}
+          </ErrorBoundary>
+        } />
+        <Route path="/tickets" element={
+          <ErrorBoundary>
+            {status == 'disconnected' ? <LandingPage /> : <Tickets />}
+          </ErrorBoundary>
+        } />
         {/* <Route path="/test" element={<Test />} /> */}
         {/* <Toaster /> */}
       </Routes>

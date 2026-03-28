@@ -8,38 +8,53 @@ jest.mock('@/contexts/WalletContext', () => ({
     useWallet: jest.fn(),
 }));
 
+jest.mock('next/navigation', () => ({
+    usePathname: () => '/',
+}));
+
 describe('Header Component', () => {
     it('renders navigation links properly', () => {
         (useWallet as jest.Mock).mockReturnValue({
             address: null,
+            providerId: 'freighter',
+            providerName: 'Freighter',
+            availableProviders: [],
             isConnected: false,
             isInstalled: true,
             connect: jest.fn(),
             disconnect: jest.fn(),
+            setProviderId: jest.fn(),
+            signTransaction: jest.fn(),
         });
 
         render(<Header />);
 
         expect(screen.getByText('CrowdPass')).toBeInTheDocument();
-        // Events, Marketplace, Create Events may appear multiple times (desktop + mobile)
+        // Home, Events, Analytics, and Create Events may appear multiple times (desktop + mobile)
+        expect(screen.getAllByText('Home').length).toBeGreaterThan(0);
         expect(screen.getAllByText('Events').length).toBeGreaterThan(0);
-        expect(screen.getAllByText('Marketplace').length).toBeGreaterThan(0);
+        expect(screen.getAllByText('Analytics').length).toBeGreaterThan(0);
         expect(screen.getAllByText('Create Events').length).toBeGreaterThan(0);
-        expect(screen.getAllByText('Connect Wallet').length).toBeGreaterThan(0);
+        expect(screen.getAllByText('Connect Freighter').length).toBeGreaterThan(0);
     });
 
     it('displays Install Freighter if wallet is not installed', () => {
         (useWallet as jest.Mock).mockReturnValue({
             address: null,
+            providerId: 'freighter',
+            providerName: 'Freighter',
+            availableProviders: [],
             isConnected: false,
             isInstalled: false,
             connect: jest.fn(),
             disconnect: jest.fn(),
+            setProviderId: jest.fn(),
+            signTransaction: jest.fn(),
         });
 
         render(<Header />);
-        // Install Freighter may appear multiple times (desktop + mobile)
-        expect(screen.getAllByText('Install Freighter').length).toBeGreaterThan(0);
+        // Select Wallet may appear multiple times (desktop + mobile)
+        expect(screen.getAllByText('Select Wallet').length).toBeGreaterThan(0);
     });
 
     it('renders connected wallet address prefix and disconnect button when connected', () => {
@@ -48,10 +63,15 @@ describe('Header Component', () => {
 
         (useWallet as jest.Mock).mockReturnValue({
             address: mockAddress,
+            providerId: 'freighter',
+            providerName: 'Freighter',
+            availableProviders: [],
             isConnected: true,
             isInstalled: true,
             connect: jest.fn(),
             disconnect: disconnectMock,
+            setProviderId: jest.fn(),
+            signTransaction: jest.fn(),
         });
 
         render(<Header />);

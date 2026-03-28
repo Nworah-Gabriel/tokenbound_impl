@@ -1,11 +1,12 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { WalletProvider, useWallet } from '../../contexts/WalletContext';
-import { isConnected, requestAccess } from '@stellar/freighter-api';
+import { detectAvailableWalletProviders, connectWallet } from '../../contexts/walletAdapters';
 
-jest.mock('@stellar/freighter-api', () => ({
-    isConnected: jest.fn(),
-    requestAccess: jest.fn(),
+jest.mock('../../contexts/walletAdapters', () => ({
+    detectAvailableWalletProviders: jest.fn(),
+    connectWallet: jest.fn(),
+    signTransactionWithProvider: jest.fn(),
 }));
 
 // A dummy component to consume the wallet context
@@ -17,7 +18,9 @@ const DummyConsumer = () => {
             <div data-testid="address">{address || 'No Address'}</div>
             <div data-testid="is-connected">{isConnected.toString()}</div>
             <div data-testid="is-installed">{isInstalled.toString()}</div>
-            <button onClick={connect}>Connect Button</button>
+            <button type="button" onClick={() => void connect()}>
+                Connect Button
+            </button>
             <button onClick={disconnect}>Disconnect Button</button>
         </div>
     );
@@ -30,8 +33,10 @@ describe('WalletContext Integration', () => {
         window.localStorage.clear();
     });
 
-    it('initializes with disconnected state but checks freighter installation', async () => {
-        (isConnected as jest.Mock).mockResolvedValue(true);
+    it('initializes with disconnected state but detects wallet providers', async () => {
+        (detectAvailableWalletProviders as jest.Mock).mockResolvedValue([
+            { id: 'freighter', name: 'Freighter', installed: true, description: 'Freighter extension', installUrl: 'https://www.freighter.app/' },
+        ]);
 
         render(
             <WalletProvider>
@@ -42,17 +47,20 @@ describe('WalletContext Integration', () => {
         expect(screen.getByTestId('address')).toHaveTextContent('No Address');
         expect(screen.getByTestId('is-connected')).toHaveTextContent('false');
 
-        // Wait for the async useEffect checking installation to finish
+        // Wait for the async useEffect to finish
         await waitFor(() => {
-            expect(isConnected).toHaveBeenCalledTimes(1);
+            expect(detectAvailableWalletProviders).toHaveBeenCalledTimes(1);
             expect(screen.getByTestId('is-installed')).toHaveTextContent('true');
         });
     });
 
     it('connects to wallet and securely populates address state', async () => {
-        (isConnected as jest.Mock).mockResolvedValue(true);
+        (detectAvailableWalletProviders as jest.Mock).mockResolvedValue([
+            { id: 'freighter', name: 'Freighter', installed: true, description: 'Freighter extension', installUrl: 'https://www.freighter.app/' },
+        ]);
+
         const mockAddress = 'GBJ2V4YJ4V4BDK3NPGKQ2XZR2F2BQYQ2X2Y2Z2X2V2Y2Z2X2V2Y2Z2X2V2Y2';
-        (requestAccess as jest.Mock).mockResolvedValue({ address: mockAddress, error: null });
+        (connectWallet as jest.Mock).mockResolvedValue(mockAddress);
 
         render(
             <WalletProvider>
@@ -64,7 +72,7 @@ describe('WalletContext Integration', () => {
         fireEvent.click(connectButton);
 
         await waitFor(() => {
-            expect(requestAccess).toHaveBeenCalledTimes(1);
+            expect(connectWallet).toHaveBeenCalledTimes(1);
             expect(screen.getByTestId('address')).toHaveTextContent(mockAddress);
             expect(screen.getByTestId('is-connected')).toHaveTextContent('true');
         });
@@ -74,7 +82,10 @@ describe('WalletContext Integration', () => {
     });
 
     it('disconnects and clears the address state', async () => {
-        (isConnected as jest.Mock).mockResolvedValue(true);
+        (detectAvailableWalletProviders as jest.Mock).mockResolvedValue([
+            { id: 'freighter', name: 'Freighter', installed: true, description: 'Freighter extension', installUrl: 'https://www.freighter.app/' },
+        ]);
+
         // Prerequisite: user is already connected
         window.localStorage.setItem('wallet_address', 'SOME_ADDRESS');
 
