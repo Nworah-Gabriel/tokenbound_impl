@@ -118,7 +118,7 @@ impl EventManager {
     }
 
     /// Create a new event with tier support
-    pub fn create_event_with_tiers(env: Env, params: CreateEventParams) -> Result<u32, Error> {
+    pub fn create_event(env: Env, params: CreateEventParams) -> Result<u32, Error> {
         params.organizer.require_auth();
 
         // Validate basic params
@@ -203,33 +203,6 @@ impl EventManager {
         );
 
         Ok(event_id)
-    }
-
-    /// Legacy create_event for backward compatibility
-    pub fn create_event(
-        env: Env,
-        organizer: Address,
-        theme: String,
-        event_type: String,
-        start_date: u64,
-        end_date: u64,
-        ticket_price: i128,
-        total_tickets: u128,
-        payment_token: Address,
-    ) -> Result<u32, Error> {
-        let tiers = Vec::new(&env);
-        let params = CreateEventParams {
-            organizer,
-            theme,
-            event_type,
-            start_date,
-            end_date,
-            ticket_price,
-            total_tickets,
-            payment_token,
-            tiers,
-        };
-        Self::create_event_with_tiers(env, params)
     }
 
     pub fn get_event(env: Env, event_id: u32) -> Result<Event, Error> {
@@ -350,7 +323,7 @@ impl EventManager {
         Self::purchase_tickets(env, buyer, event_id, tier_index, 1)
     }
 
-   pub fn purchase_tickets(
+    pub fn purchase_tickets(
         env: Env,
         buyer: Address,
         event_id: u32,
@@ -545,31 +518,6 @@ impl EventManager {
             (Symbol::new(&env, "event_updated"),),
             (event_id, event.organizer),
         );
-
-        Ok(())
-    }
-
-    fn validate_event_params(
-        env: &Env,
-        start_date: u64,
-        end_date: u64,
-        ticket_price: i128,
-        total_tickets: u128,
-    ) -> Result<(), Error> {
-        let current_time = env.ledger().timestamp();
-
-        if start_date <= current_time {
-            return Err(Error::InvalidStartDate);
-        }
-        if end_date <= start_date {
-            return Err(Error::InvalidEndDate);
-        }
-        if ticket_price < 0 {
-            return Err(Error::NegativeTicketPrice);
-        }
-        if total_tickets == 0 {
-            return Err(Error::InvalidTicketCount);
-        }
 
         Ok(())
     }

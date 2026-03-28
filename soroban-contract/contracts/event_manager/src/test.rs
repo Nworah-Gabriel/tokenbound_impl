@@ -63,7 +63,7 @@ fn make_event(
     (organizer, event_id)
 }
 
-// ========== Existing Tests ==========
+// ========== Basic Event Tests ==========
 
 #[test]
 fn test_create_event() {
@@ -96,13 +96,6 @@ fn test_create_event() {
 
 #[test]
 #[should_panic(expected = "Error(Contract, #5)")]
-fn setup() -> Env {
-    let env = Env::default();
-    env.mock_all_auths();
-    env
-}
-
-#[test]
 fn test_create_event_past_date() {
     let env = Env::default();
     let (client, mock_addr) = setup(&env);
@@ -114,29 +107,13 @@ fn test_create_event_past_date() {
         organizer,
         theme: String::from_str(&env, "Past Event"),
         event_type: String::from_str(&env, "Conference"),
-        start_date: 500, // past
+        start_date: 500,
         end_date: 1500,
         ticket_price: 1000_0000000,
         total_tickets: 100,
         payment_token: mock_addr,
         tiers: Vec::new(&env),
     });
-    let theme = String::from_str(&env, "Past Event");
-    let event_type = String::from_str(&env, "Conference");
-    let start_date = 500; // Past date
-    let end_date = 1500;
-
-    let result = client.try_create_event(
-        &organizer,
-        &theme,
-        &event_type,
-        &start_date,
-        &end_date,
-        &1000_0000000,
-        &100,
-        &Address::generate(&env),
-    );
-    assert!(result.is_err());
 }
 
 #[test]
@@ -176,50 +153,13 @@ fn test_claim_refund_successful() {
     client.purchase_ticket(&buyer, &event_id, &0u32);
     client.cancel_event(&event_id);
     client.claim_refund(&buyer, &event_id);
-    assert_eq!(event.is_canceled, true);
-fn create_sample_event(env: &Env, client: &EventManagerClient<'_>, payment_token: &Address) -> u32 {
-    let organizer = Address::generate(env);
-    client.create_event(
-        &organizer,
-        &String::from_str(env, "Stellar Meetup"),
-        &String::from_str(env, "Conference"),
-        &(env.ledger().timestamp() + 86_400),
-        &(env.ledger().timestamp() + 172_800),
-        &100i128,
-        &20u128,
-        payment_token,
-    )
-}
-
-#[test]
-fn test_create_event() {
-    let env = setup();
-    let contract_id = env.register(EventManager, ());
-    let client = EventManagerClient::new(&env, &contract_id);
-    let mock_addr = env.register(MockContract, ());
-    client.initialize(&mock_addr);
-    let organizer = Address::generate(&env);
-
-    let event_id = client.create_event(
-        &organizer,
-        &String::from_str(&env, "Rust Conference 2026"),
-        &String::from_str(&env, "Conference"),
-        &(env.ledger().timestamp() + 86_400),
-        &(env.ledger().timestamp() + 172_800),
-        &1000_0000000,
-        &500u128,
-        &mock_addr,
-    );
 
     let event = client.get_event(&event_id);
-    assert_eq!(event_id, 0);
-    assert_eq!(event.id, 0);
-    assert_eq!(event.total_tickets, 500);
-    assert_eq!(event.tickets_sold, 0);
-    assert_eq!(event.payment_token, mock_addr);
+    assert!(event.is_canceled);
 }
 
 #[test]
+#[should_panic(expected = "Error(Contract, #14)")]
 fn test_claim_refund_event_not_canceled() {
     let env = Env::default();
     let (client, mock_addr) = setup(&env);
@@ -227,38 +167,12 @@ fn test_claim_refund_event_not_canceled() {
     let buyer = Address::generate(&env);
 
     client.purchase_ticket(&buyer, &event_id, &0u32);
+    // Attempt refund on non-canceled event — should fail with EventNotCanceled
     client.claim_refund(&buyer, &event_id);
-    env.mock_all_auths();
-
-#[should_panic(expected = "HostError: Error(Contract, #5)")]
-fn test_create_event_rejects_past_start_date() {
-    let env = setup();
-    let contract_id = env.register(EventManager, ());
-    let client = EventManagerClient::new(&env, &contract_id);
-    let mock_addr = env.register(MockContract, ());
-    client.initialize(&mock_addr);
-    env.ledger().set_timestamp(1000);
-
-    let organizer = Address::generate(&env);
-    client.create_event(
-        &organizer,
-        &String::from_str(&env, "Past Event"),
-        &String::from_str(&env, "Conference"),
-        &999u64,
-        &2000u64,
-        &1000_0000000,
-        &100u128,
-        &mock_addr,
-    );
-
-    client.purchase_ticket(&buyer, &event_id);
-
-    // Try to claim refund without canceling event
-    let result = client.try_claim_refund(&buyer, &event_id);
-    assert!(result.is_err());
 }
 
 #[test]
+#[should_panic(expected = "Error(Contract, #15)")]
 fn test_claim_refund_double_claim() {
     let env = Env::default();
     let (client, mock_addr) = setup(&env);
@@ -266,29 +180,26 @@ fn test_claim_refund_double_claim() {
     let buyer = Address::generate(&env);
 
     client.purchase_ticket(&buyer, &event_id, &0u32);
-    env.mock_all_auths();
-
+    client.cancel_event(&event_id);
+    client.claim_refund(&buyer, &event_id);
+    // Second claim should fail with RefundAlreadyClaimed
+    client.claim_refund(&buyer, &event_id);
 }
 
 #[test]
 fn test_cancel_event_marks_event_canceled() {
-    let env = setup();
-    let contract_id = env.register(EventManager, ());
-    let client = EventManagerClient::new(&env, &contract_id);
-    let mock_addr = env.register(MockContract, ());
-    client.initialize(&mock_addr);
-    let event_id = create_sample_event(&env, &client, &mock_addr);
+    let env = Env::default();
+    let (client, mock_addr) = setup(&env);
+    let (_, event_id) = make_event(&env, &client, &mock_addr, Vec::new(&env));
 
     client.cancel_event(&event_id);
-    client.claim_refund(&buyer, &event_id);
-    client.claim_refund(&buyer, &event_id);
 
-    // Try to claim again (should fail)
-    let result = client.try_claim_refund(&buyer, &event_id);
-    assert!(result.is_err());
+    let event = client.get_event(&event_id);
+    assert!(event.is_canceled);
 }
 
 #[test]
+#[should_panic(expected = "Error(Contract, #16)")]
 fn test_claim_refund_no_ticket_purchased() {
     let env = Env::default();
     let (client, mock_addr) = setup(&env);
@@ -298,6 +209,7 @@ fn test_claim_refund_no_ticket_purchased() {
 
     client.purchase_ticket(&buyer, &event_id, &0u32);
     client.cancel_event(&event_id);
+    // non_buyer never purchased — should fail with NotABuyer
     client.claim_refund(&non_buyer, &event_id);
 }
 
@@ -349,7 +261,7 @@ fn test_multiple_refund_claims() {
 }
 
 #[test]
-#[should_panic(expected = "Event not found")]
+#[should_panic(expected = "Error(Contract, #2)")]
 fn test_claim_refund_nonexistent_event() {
     let env = Env::default();
     let (client, _) = setup(&env);
@@ -435,7 +347,7 @@ fn test_per_tier_inventory_tracking() {
 }
 
 #[test]
-#[should_panic(expected = "Tier is sold out")]
+#[should_panic(expected = "Error(Contract, #12)")]
 fn test_purchase_ticket_tier_sold_out() {
     let env = Env::default();
     let (client, mock_addr) = setup(&env);
@@ -446,12 +358,12 @@ fn test_purchase_ticket_tier_sold_out() {
         client.purchase_ticket(&Address::generate(&env), &event_id, &2u32);
     }
 
-    // 4th VIP purchase should fail
+    // 4th VIP purchase should fail with TierSoldOut
     client.purchase_ticket(&Address::generate(&env), &event_id, &2u32);
 }
 
 #[test]
-#[should_panic(expected = "Invalid tier index")]
+#[should_panic(expected = "Error(Contract, #11)")]
 fn test_purchase_ticket_invalid_tier_index() {
     let env = Env::default();
     let (client, mock_addr) = setup(&env);
@@ -578,7 +490,7 @@ fn test_update_event_emits_event() {
 }
 
 #[test]
-#[should_panic(expected = "Cannot update a canceled event")]
+#[should_panic(expected = "Error(Contract, #3)")]
 fn test_update_event_canceled_fails() {
     let env = Env::default();
     let (client, _organizer, event_id) = setup_event_for_update(&env);
@@ -595,72 +507,8 @@ fn test_update_event_canceled_fails() {
 }
 
 #[test]
-#[should_panic(expected = "Cannot reduce total_tickets below tickets_sold")]
+#[should_panic(expected = "Error(Contract, #18)")]
 fn test_update_event_total_tickets_below_sold_fails() {
-    let event = client.get_event(&event_id);
-    assert!(event.is_canceled);
-}
-
-#[test]
-fn test_purchase_ticket_increments_tickets_sold() {
-    let env = setup();
-    let contract_id = env.register(EventManager, ());
-    let client = EventManagerClient::new(&env, &contract_id);
-    let mock_addr = env.register(MockContract, ());
-    client.initialize(&mock_addr);
-    let event_id = create_sample_event(&env, &client, &mock_addr);
-    let buyer = Address::generate(&env);
-
-    client.purchase_ticket(&buyer, &event_id);
-
-    // Try to claim refund without purchasing
-    let result = client.try_claim_refund(&non_buyer, &event_id);
-    assert!(result.is_err());
-    let event = client.get_event(&event_id);
-    let purchase = client.get_buyer_purchase(&event_id, &buyer).unwrap();
-
-    assert_eq!(event.tickets_sold, 1);
-    assert_eq!(purchase.quantity, 1);
-    assert_eq!(purchase.total_paid, 100);
-}
-
-#[test]
-fn test_purchase_tickets_applies_group_discount() {
-    let env = setup();
-    let contract_id = env.register(EventManager, ());
-    let client = EventManagerClient::new(&env, &contract_id);
-    let mock_addr = env.register(MockContract, ());
-    client.initialize(&mock_addr);
-    let event_id = create_sample_event(&env, &client, &mock_addr);
-    let buyer = Address::generate(&env);
-
-    client.purchase_tickets(&buyer, &event_id, &5u128);
-
-    let event = client.get_event(&event_id);
-    let purchase = client.get_buyer_purchase(&event_id, &buyer).unwrap();
-
-    assert_eq!(event.tickets_sold, 5);
-    assert_eq!(purchase.quantity, 5);
-    assert_eq!(purchase.total_paid, 475);
-}
-
-#[test]
-fn test_batch_purchase_refund_uses_total_paid() {
-    let env = setup();
-    let contract_id = env.register(EventManager, ());
-    let client = EventManagerClient::new(&env, &contract_id);
-    let mock_addr = env.register(MockContract, ());
-    client.initialize(&mock_addr);
-    let event_id = create_sample_event(&env, &client, &mock_addr);
-    let buyer = Address::generate(&env);
-
-    client.purchase_tickets(&buyer, &event_id, &10u128);
-    client.cancel_event(&event_id);
-    client.claim_refund(&buyer, &event_id);
-}
-
-#[test]
-fn test_claim_refund_nonexistent_event() {
     let env = Env::default();
     let (client, mock_addr) = setup(&env);
     let (_, event_id) = make_event(&env, &client, &mock_addr, Vec::new(&env));
@@ -668,6 +516,7 @@ fn test_claim_refund_nonexistent_event() {
     client.purchase_ticket(&Address::generate(&env), &event_id, &0u32);
     client.purchase_ticket(&Address::generate(&env), &event_id, &0u32);
 
+    // Reduce total_tickets below tickets_sold (2) — should fail with TicketsBelowSold
     client.update_event(
         &event_id,
         &Option::None,
@@ -679,7 +528,80 @@ fn test_claim_refund_nonexistent_event() {
 }
 
 #[test]
-#[should_panic(expected = "Start date cannot be in the past")]
+fn test_purchase_ticket_increments_tickets_sold() {
+    let env = Env::default();
+    let (client, mock_addr) = setup(&env);
+    let (_, event_id) = make_event(&env, &client, &mock_addr, Vec::new(&env));
+    let buyer = Address::generate(&env);
+
+    client.purchase_ticket(&buyer, &event_id, &0u32);
+
+    let event = client.get_event(&event_id);
+    let purchase = client.get_buyer_purchase(&event_id, &buyer).unwrap();
+
+    assert_eq!(event.tickets_sold, 1);
+    assert_eq!(purchase.quantity, 1);
+    assert_eq!(purchase.total_paid, 100);
+}
+
+#[test]
+fn test_purchase_tickets_applies_group_discount() {
+    let env = Env::default();
+    let (client, mock_addr) = setup(&env);
+    let organizer = Address::generate(&env);
+    let start = env.ledger().timestamp() + 86400;
+
+    let event_id = client.create_event(&CreateEventParams {
+        organizer,
+        theme: String::from_str(&env, "Group Test"),
+        event_type: String::from_str(&env, "Conference"),
+        start_date: start,
+        end_date: start + 86400,
+        ticket_price: 100i128,
+        total_tickets: 20u128,
+        payment_token: mock_addr,
+        tiers: Vec::new(&env),
+    });
+    let buyer = Address::generate(&env);
+
+    client.purchase_tickets(&buyer, &event_id, &0u32, &5u128);
+
+    let event = client.get_event(&event_id);
+    let purchase = client.get_buyer_purchase(&event_id, &buyer).unwrap();
+
+    assert_eq!(event.tickets_sold, 5);
+    assert_eq!(purchase.quantity, 5);
+    // 5% group discount: 5 * 100 * 0.95 = 475
+    assert_eq!(purchase.total_paid, 475);
+}
+
+#[test]
+fn test_batch_purchase_refund_uses_total_paid() {
+    let env = Env::default();
+    let (client, mock_addr) = setup(&env);
+    let organizer = Address::generate(&env);
+    let start = env.ledger().timestamp() + 86400;
+
+    let event_id = client.create_event(&CreateEventParams {
+        organizer,
+        theme: String::from_str(&env, "Batch Refund Test"),
+        event_type: String::from_str(&env, "Conference"),
+        start_date: start,
+        end_date: start + 86400,
+        ticket_price: 100i128,
+        total_tickets: 20u128,
+        payment_token: mock_addr,
+        tiers: Vec::new(&env),
+    });
+    let buyer = Address::generate(&env);
+
+    client.purchase_tickets(&buyer, &event_id, &0u32, &10u128);
+    client.cancel_event(&event_id);
+    client.claim_refund(&buyer, &event_id);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #5)")]
 fn test_update_event_start_date_past_fails() {
     let env = Env::default();
     let (client, _organizer, event_id) = setup_event_for_update(&env);
@@ -697,7 +619,7 @@ fn test_update_event_start_date_past_fails() {
 }
 
 #[test]
-#[should_panic(expected = "Start date must be before end date")]
+#[should_panic(expected = "Error(Contract, #6)")]
 fn test_update_event_end_before_start_fails() {
     let env = Env::default();
     let (client, _organizer, event_id) = setup_event_for_update(&env);
@@ -714,7 +636,7 @@ fn test_update_event_end_before_start_fails() {
 }
 
 #[test]
-#[should_panic(expected = "Event not found")]
+#[should_panic(expected = "Error(Contract, #2)")]
 fn test_update_event_not_found_fails() {
     let env = Env::default();
     let (client, _) = setup(&env);
@@ -727,21 +649,19 @@ fn test_update_event_not_found_fails() {
         &Option::None,
         &Option::None,
     );
-#[should_panic(expected = "Refund already claimed")]
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #15)")]
 fn test_refund_cannot_be_claimed_twice() {
-    let env = setup();
-    let contract_id = env.register(EventManager, ());
-    let client = EventManagerClient::new(&env, &contract_id);
-    let mock_addr = env.register(MockContract, ());
-    client.initialize(&mock_addr);
-    let event_id = create_sample_event(&env, &client, &mock_addr);
+    let env = Env::default();
+    let (client, mock_addr) = setup(&env);
+    let (_, event_id) = make_event(&env, &client, &mock_addr, Vec::new(&env));
     let buyer = Address::generate(&env);
 
-    // Try to claim refund for non-existent event
-    let result = client.try_claim_refund(&buyer, &999u32);
-    assert!(result.is_err());
-    client.purchase_tickets(&buyer, &event_id, &2u128);
+    client.purchase_ticket(&buyer, &event_id, &0u32);
     client.cancel_event(&event_id);
     client.claim_refund(&buyer, &event_id);
+    // Second claim should fail with RefundAlreadyClaimed
     client.claim_refund(&buyer, &event_id);
 }
