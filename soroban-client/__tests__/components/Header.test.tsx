@@ -24,6 +24,7 @@ describe('Header Component', () => {
             connect: jest.fn(),
             disconnect: jest.fn(),
             setProviderId: jest.fn(),
+            signTransaction: jest.fn(),
         });
 
         render(<Header />);
@@ -48,6 +49,7 @@ describe('Header Component', () => {
             connect: jest.fn(),
             disconnect: jest.fn(),
             setProviderId: jest.fn(),
+            signTransaction: jest.fn(),
         });
 
         render(<Header />);
@@ -69,6 +71,7 @@ describe('Header Component', () => {
             connect: jest.fn(),
             disconnect: disconnectMock,
             setProviderId: jest.fn(),
+            signTransaction: jest.fn(),
         });
 
         render(<Header />);

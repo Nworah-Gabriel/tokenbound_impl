@@ -1,1 +1,6 @@
 soroban.tar.gz
+
+# Environment variable files
+.env
+.env.local
+.env.*.local

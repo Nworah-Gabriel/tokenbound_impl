@@ -5,7 +5,7 @@ import './index.css'
 import { BrowserRouter } from 'react-router-dom'
 import { KitContext } from './context/kit-context.js'
 import { StarknetProvider } from './context/starknet-provider.jsx'
-import { Toaster } from 'react-hot-toast';
+import { Toaster } from 'sonner';
 import ErrorBoundary from './Components/shared/error-boundary.jsx'
 import { initSentry } from './lib/sentry.js'
 import { initPerformanceMonitoring, trackPageLoad } from './lib/performance.js'
@@ -26,7 +26,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       <BrowserRouter>
         <StarknetProvider>
           <App />
-          <Toaster />
+          <Toaster richColors position="top-right" closeButton />
         </StarknetProvider>
       </BrowserRouter>
     </ErrorBoundary>

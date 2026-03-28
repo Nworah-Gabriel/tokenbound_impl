@@ -48,20 +48,22 @@ function EventStatusBadge({ event }: { event: Event }) {
 
 function AttendeesModal({
   eventId,
+  readerAccount,
   onClose,
 }: {
   eventId: number;
+  readerAccount: string;
   onClose: () => void;
 }) {
   const [attendees, setAttendees] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getEventAttendees(eventId)
+    getEventAttendees(eventId, readerAccount)
       .then(setAttendees)
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [eventId]);
+  }, [eventId, readerAccount]);
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
@@ -102,7 +104,7 @@ function UpdateEventModal({
   onClose: () => void;
   onSuccess: () => void;
 }) {
-  const { address } = useWallet();
+  const { address, signTransaction } = useWallet();
   const [theme, setTheme] = useState(event.theme);
   const [price, setPrice] = useState(
     (Number(event.ticket_price) / 1e7).toString()
@@ -119,19 +121,22 @@ function UpdateEventModal({
     setSubmitting(true);
     setError("");
     try {
-      await updateEvent({
-        organizer: address,
-        event_id: event.id,
-        theme: theme !== event.theme ? theme : undefined,
-        ticket_price:
-          price !== (Number(event.ticket_price) / 1e7).toString()
-            ? BigInt(Math.floor(parseFloat(price) * 1e7))
-            : undefined,
-        total_tickets:
-          totalTickets !== event.total_tickets.toString()
-            ? BigInt(totalTickets)
-            : undefined,
-      });
+      await updateEvent(
+        {
+          organizer: address,
+          event_id: event.id,
+          theme: theme !== event.theme ? theme : undefined,
+          ticket_price:
+            price !== (Number(event.ticket_price) / 1e7).toString()
+              ? BigInt(Math.floor(parseFloat(price) * 1e7))
+              : undefined,
+          total_tickets:
+            totalTickets !== event.total_tickets.toString()
+              ? BigInt(totalTickets)
+              : undefined,
+        },
+        signTransaction
+      );
       onSuccess();
       onClose();
     } catch (err: any) {
@@ -295,7 +300,8 @@ function EventCard({
 }
 
 export default function DashboardPage() {
-  const { address, isConnected, isInstalled, connect } = useWallet();
+  const { address, isConnected, isInstalled, connect, signTransaction } =
+    useWallet();
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -307,28 +313,29 @@ export default function DashboardPage() {
   );
 
   const fetchEvents = useCallback(async () => {
+    if (!address) return;
     setLoading(true);
     setError("");
     try {
-      const all = await getAllEvents();
+      const all = await getAllEvents(address);
       setEvents(all);
     } catch (err: any) {
       setError(err.message || "Failed to load events");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [address]);
 
   useEffect(() => {
-    if (isConnected) fetchEvents();
-  }, [isConnected, fetchEvents]);
+    if (isConnected && address) fetchEvents();
+  }, [isConnected, address, fetchEvents]);
 
   const handleCancel = async (eventId: number) => {
     if (!address) return;
     if (!confirm("Cancel this event? Attendees will be eligible for refunds."))
       return;
     try {
-      await cancelEvent(address, eventId);
+      await cancelEvent(address, eventId, signTransaction);
       setActionMsg("Event canceled successfully.");
       fetchEvents();
     } catch (err: any) {
@@ -339,7 +346,7 @@ export default function DashboardPage() {
   const handleClaim = async (eventId: number) => {
     if (!address) return;
     try {
-      await claimFunds(address, eventId);
+      await claimFunds(address, eventId, signTransaction);
       setActionMsg("Funds claimed successfully.");
       fetchEvents();
     } catch (err: any) {
@@ -372,9 +379,10 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-[#18181B] text-white">
-      {modal.type === "attendees" && (
+      {modal.type === "attendees" && address && (
         <AttendeesModal
           eventId={modal.eventId}
+          readerAccount={address}
           onClose={() => setModal({ type: "none" })}
         />
       )}
@@ -423,7 +431,7 @@ export default function DashboardPage() {
                 value: formatXLM(
                   myEvents.reduce(
                     (s, e) => s + e.tickets_sold * e.ticket_price,
-                    0n
+                    BigInt(0)
                   )
                 ),
               },

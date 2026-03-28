@@ -1,13 +1,19 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import {
   detectAvailableWalletProviders,
   connectWallet,
   signTransactionWithProvider,
   WalletProviderId,
   WalletProviderInfo,
-} from './walletAdapters';
+} from "./walletAdapters";
 
 import { trackWalletConnection } from "@/lib/analytics";
 
@@ -21,30 +27,40 @@ interface WalletContextType {
   connect: (providerId?: WalletProviderId) => Promise<void>;
   disconnect: () => void;
   setProviderId: (providerId: WalletProviderId) => void;
-  signTransaction: (txXdr: string, options: { networkPassphrase: string; address: string }) => Promise<string>;
+  signTransaction: (
+    txXdr: string,
+    options: { networkPassphrase: string; address: string }
+  ) => Promise<string>;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
 
-const DEFAULT_PROVIDER: WalletProviderId = 'freighter';
+const DEFAULT_PROVIDER: WalletProviderId = "freighter";
 
-export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
   const [address, setAddress] = useState<string | null>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('wallet_address');
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("wallet_address");
     }
     return null;
   });
 
-  const [providerId, setProviderId] = useState<WalletProviderId>(() => {
-    if (typeof window !== 'undefined') {
-      return (localStorage.getItem('wallet_provider') as WalletProviderId) || DEFAULT_PROVIDER;
+  const [providerId, setProviderIdState] = useState<WalletProviderId>(() => {
+    if (typeof window !== "undefined") {
+      return (
+        (localStorage.getItem("wallet_provider") as WalletProviderId) ||
+        DEFAULT_PROVIDER
+      );
     }
     return DEFAULT_PROVIDER;
   });
 
-  const [availableProviders, setAvailableProviders] = useState<WalletProviderInfo[]>([]);
-  const [isInstalled, setIsInstalled] = useState<boolean>(false);
+  const [availableProviders, setAvailableProviders] = useState<
+    WalletProviderInfo[]
+  >([]);
+  const [isInstalled, setIsInstalled] = useState(false);
 
   useEffect(() => {
     const checkWallets = async () => {
@@ -53,66 +69,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         setAvailableProviders(providers);
 
         const activeProvider = providers.find((p) => p.id === providerId);
-        const installed = Boolean(activeProvider?.installed);
-        setIsInstalled(installed);
-
-        const savedAddress = localStorage.getItem('wallet_address');
-        if (savedAddress) {
-          setAddress(savedAddress);
-    const [address, setAddress] = useState<string | null>(() => {
-        if (typeof window !== 'undefined') {
-            return localStorage.getItem('wallet_address');
-        }
-        return null;
-    });
-    const [isInstalled, setIsInstalled] = useState<boolean>(false);
-
-useEffect(() => {
-        const checkInstallation = async () => {
-            try {
-                const result = await isConnected();
-                const installed = result.isConnected;
-                setIsInstalled(installed);
-
-                if (installed) {
-                    const savedAddress = localStorage.getItem('wallet_address');
-                    if (savedAddress) {
-                        const allowedResult = await isAllowed();
-                        if (!allowedResult.isAllowed) {
-                            setAddress(null);
-                            localStorage.removeItem('wallet_address');
-                        }
-                    }
-                }
-            } catch (e) {
-                console.error("Freighter installation check failed", e);
-                setIsInstalled(false);
-            }
-        };
-        checkInstallation();
-    }, []);
-
-    const connect = async () => {
-        console.log("Connect function called");
-        try {
-            console.log("Requesting access from Freighter...");
-            const response = await requestAccess();
-            console.log("Freighter response:", response);
-            if (response && response.address) {
-                setAddress(response.address);
-                localStorage.setItem('wallet_address', response.address);
-                trackWalletConnection();
-                console.log("Successfully connected:", response.address);
-            } else if (response && response.error) {
-                console.error("Freighter returned an error:", response.error);
-                alert(`Freighter Error: ${response.error}`);
-            } else {
-                console.warn("Freighter returned an empty or unexpected response");
-            }
-        } catch (error) {
-            console.error("Failed to connect to Freighter:", error);
-            alert("An unexpected error occurred while connecting. Check console for details.");
-        }
+        setIsInstalled(Boolean(activeProvider?.installed));
       } catch (error) {
         console.error("Wallet provider detection failed", error);
         setAvailableProviders([]);
@@ -120,8 +77,13 @@ useEffect(() => {
       }
     };
 
-    checkWallets();
+    void checkWallets();
   }, [providerId]);
+
+  const setProviderId = (id: WalletProviderId) => {
+    setProviderIdState(id);
+    localStorage.setItem("wallet_provider", id);
+  };
 
   const connect = async (selectedProviderId?: WalletProviderId) => {
     const providerToUse = selectedProviderId || providerId;
@@ -130,9 +92,9 @@ useEffect(() => {
       setProviderId(providerToUse);
       setAddress(walletAddress);
       setIsInstalled(true);
-      localStorage.setItem('wallet_address', walletAddress);
-      localStorage.setItem('wallet_provider', providerToUse);
-      return;
+      localStorage.setItem("wallet_address", walletAddress);
+      localStorage.setItem("wallet_provider", providerToUse);
+      trackWalletConnection();
     } catch (error: unknown) {
       setIsInstalled(false);
       console.error(`Failed to connect to ${providerToUse}:`, error);
@@ -147,13 +109,16 @@ useEffect(() => {
 
   const disconnect = () => {
     setAddress(null);
-    localStorage.removeItem('wallet_address');
-    localStorage.removeItem('wallet_provider');
+    localStorage.removeItem("wallet_address");
+    localStorage.removeItem("wallet_provider");
   };
 
-  const signTransaction = async (txXdr: string, options: { networkPassphrase: string; address: string }) => {
-    if (!isInstalled || !providerId) {
-      throw new Error("Wallet provider not connected.");
+  const signTransaction = async (
+    txXdr: string,
+    options: { networkPassphrase: string; address: string }
+  ) => {
+    if (!providerId) {
+      throw new Error("Wallet provider not selected.");
     }
     return await signTransactionWithProvider(providerId, txXdr, options);
   };
@@ -170,14 +135,11 @@ useEffect(() => {
         providerId,
         providerName,
         availableProviders,
-        isConnected: !!address,
+        isConnected: Boolean(address),
         isInstalled,
         connect,
         disconnect,
-        setProviderId: (id: WalletProviderId) => {
-          setProviderId(id);
-          localStorage.setItem('wallet_provider', id);
-        },
+        setProviderId,
         signTransaction,
       }}
     >
@@ -187,9 +149,9 @@ useEffect(() => {
 };
 
 export const useWallet = () => {
-    const context = useContext(WalletContext);
-    if (context === undefined) {
-        throw new Error('useWallet must be used within a WalletProvider');
-    }
-    return context;
+  const context = useContext(WalletContext);
+  if (context === undefined) {
+    throw new Error("useWallet must be used within a WalletProvider");
+  }
+  return context;
 };

@@ -18,7 +18,9 @@ const DummyConsumer = () => {
             <div data-testid="address">{address || 'No Address'}</div>
             <div data-testid="is-connected">{isConnected.toString()}</div>
             <div data-testid="is-installed">{isInstalled.toString()}</div>
-            <button onClick={connect}>Connect Button</button>
+            <button type="button" onClick={() => void connect()}>
+                Connect Button
+            </button>
             <button onClick={disconnect}>Disconnect Button</button>
         </div>
     );

@@ -1,3 +1,4 @@
+import { env } from "@/lib/env";
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "../globals.css";
@@ -19,7 +20,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_BASE_URL || "https://crowdpass.io"),
+  metadataBase: new URL(env.NEXT_PUBLIC_BASE_URL),
   title: "CrowdPass — Secure Event Ticketing on Stellar",
   description:
     "Decentralized event ticketing platform built on Stellar blockchain. Secure, transparent, and fraud-proof event management powered by blockchain technology.",
