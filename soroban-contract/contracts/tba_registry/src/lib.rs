@@ -1,7 +1,7 @@
 #![no_std]
 use soroban_sdk::xdr::ToXdr;
 use soroban_sdk::{
-    contract, contractimpl, contracttype, Address, BytesN, Env, IntoVal, Symbol, Val, Vec,
+    contract, contracterror, contractimpl, contracttype, Address, BytesN, Env, IntoVal, Symbol, Val, Vec,
 };
 
 // Error handling
@@ -203,7 +203,6 @@ impl TbaRegistry {
         let new_count = current_count + 1;
         env.storage().persistent().set(&count_key, &new_count);
 
-        Ok(deployed_address)
         // Extend persistent TTL for count
         env.storage().persistent().extend_ttl(
             &count_key,
@@ -211,7 +210,7 @@ impl TbaRegistry {
             100 * 24 * 60 * 60 / 5,
         );
 
-        deployed_address
+        Ok(deployed_address)
     }
 
     /// Get the total number of TBA accounts deployed for a specific NFT

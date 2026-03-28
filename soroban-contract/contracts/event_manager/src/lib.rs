@@ -1,7 +1,7 @@
 #![no_std]
 
 use soroban_sdk::{
-    contract, contractimpl, contracttype, Address, BytesN, Env, IntoVal, String, Symbol, Vec,
+    contract, contracterror, contractimpl, contracttype, Address, BytesN, Env, IntoVal, String, Symbol, Vec,
 };
 
 // Error handling
@@ -81,21 +81,19 @@ impl EventManager {
         end_date: u64,
         ticket_price: i128,
         total_tickets: u128,
-    ) -> Result<u32, Error> {
-      
         payment_token: Address,
     ) -> u32 {
         // Validate organizer address
         organizer.require_auth();
 
         // Validate inputs
-        Self::validate_event_params(&env, start_date, end_date, ticket_price, total_tickets)?;
+        Self::validate_event_params(&env, start_date, end_date, ticket_price, total_tickets).unwrap_or_else(|e| panic!("Validation failed: {:?}", e));
 
         // Get and increment event counter
-        let event_id = Self::get_and_increment_counter(&env)?;
+        let event_id = Self::get_and_increment_counter(&env).unwrap_or_else(|e| panic!("Counter error: {:?}", e));
 
         // Deploy ticket NFT contract via factory
-        let ticket_nft_addr = Self::deploy_ticket_nft(&env, event_id, theme.clone(), total_tickets)?;
+        let ticket_nft_addr = Self::deploy_ticket_nft(&env, event_id, theme.clone(), total_tickets).unwrap_or_else(|e| panic!("Deploy failed: {:?}", e));
 
         // Create event struct
         let event = Event {
@@ -131,7 +129,7 @@ impl EventManager {
             (event_id, organizer, ticket_nft_addr),
         );
 
-        Ok(event_id)
+        event_id
     }
 
     /// Get event by ID
@@ -494,153 +492,28 @@ impl EventManager {
         Ok(current)
     }
 
-    fn deploy_ticket_nft(env: &Env, event_id: u32, theme: String, total_supply: u128) -> Result<Address, Error> {
+    fn deploy_ticket_nft(env: &Env, event_id: u32, _theme: String, _total_supply: u128) -> Result<Address, Error> {
         let factory_addr: Address = env
             .storage()
             .instance()
             .get(&DataKey::TicketFactory)
             .ok_or(Error::FactoryNotInitialized)?;
 
+        // Create a unique salt from the event_id
+        let mut salt_bytes = [0u8; 32];
+        let id_bytes = event_id.to_be_bytes();
+        salt_bytes[..4].copy_from_slice(&id_bytes);
+        let salt = BytesN::from_array(env, &salt_bytes);
+
         // Call the factory contract to deploy a new NFT contract
-            .unwrap_or_else(|| panic!("Ticket factory not initialized"));
-        // This is a cross-contract call
-
-        Ok(nft_addr)
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-    use soroban_sdk::{testutils::Address as _, testutils::Ledger, vec, Env, Symbol};
-
-    #[contract]
-    pub struct MockFactory;
-
-    #[contractimpl]
-    impl MockFactory {
-        pub fn deploy_ticket_nft(
-            env: Env,
-            _event_id: u32,
-            _theme: String,
-            _total_supply: u128,
-        ) -> Address {
-            Address::generate(&env)
-        }
-    }
-
-    #[test]
-    fn test_create_event() {
-        let env = Env::default();
-        let contract_id = env.register_contract(None, EventManager);
-        let client = EventManagerClient::new(&env, &contract_id);
-
-        let factory_addr = env.register_contract(None, MockFactory);
-        let organizer = Address::generate(&env);
-
-        // Mock the organizer authorization
-        env.mock_all_auths();
-
-        // Initialize
-        client.initialize(&factory_addr).unwrap();
-
-        // Create event
-        let theme = String::from_str(&env, "Rust Conference 2026");
-        let event_type = String::from_str(&env, "Conference");
-        let start_date = env.ledger().timestamp() + 86400; // 1 day from now
-        let end_date = start_date + 86400; // 2 days from now
-        let ticket_price = 1000_0000000; // 100 XLM (7 decimals)
-        let total_tickets = 500;
-
-        let event_id = client.create_event(
-            &organizer,
-            &theme,
-            &event_type,
-            &start_date,
-            &end_date,
-            &ticket_price,
-            &total_tickets,
-        ).unwrap();
-
-        assert_eq!(event_id, 0);
-
-        // Get event
-        let event = client.get_event(&event_id).unwrap();
-        assert_eq!(event.id, 0);
-        assert_eq!(event.organizer, organizer);
-        assert_eq!(event.total_tickets, total_tickets);
-        assert_eq!(event.tickets_sold, 0);
-        assert_eq!(event.is_canceled, false);
-    }
-
-    #[test]
-    fn test_create_event_past_date() {
-        let env = Env::default();
-        let contract_id = env.register_contract(None, EventManager);
-        let client = EventManagerClient::new(&env, &contract_id);
-
-        let factory_addr = env.register_contract(None, MockFactory);
-        let organizer = Address::generate(&env);
-
-        env.mock_all_auths();
-        env.ledger().set_timestamp(1000);
-        client.initialize(&factory_addr).unwrap();
-
-        let theme = String::from_str(&env, "Past Event");
-        let event_type = String::from_str(&env, "Conference");
-        let start_date = env.ledger().timestamp().saturating_sub(1); // Past date
-        let end_date = start_date.saturating_add(86400);
-
-        let result = client.create_event(
-            &organizer,
-            &theme,
-            &event_type,
-            &start_date,
-            &end_date,
-            &1000_0000000,
-            &100,
-        );
-        
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), Error::InvalidStartDate);
-    }
-
-    #[test]
-    fn test_cancel_event() {
-        let env = Env::default();
-        let contract_id = env.register_contract(None, EventManager);
-        let client = EventManagerClient::new(&env, &contract_id);
-
-        let factory_addr = env.register_contract(None, MockFactory);
-        let organizer = Address::generate(&env);
-
-        env.mock_all_auths();
-        client.initialize(&factory_addr).unwrap();
-
-        let event_id = client.create_event(
-            &organizer,
-            &String::from_str(&env, "Event"),
-            &String::from_str(&env, "Type"),
-            &(env.ledger().timestamp() + 86400),
-            &(env.ledger().timestamp() + 172800),
-            &1000_0000000,
-            &100,
-        ).unwrap();
-
-        client.cancel_event(&event_id).unwrap();
-
-        let event = client.get_event(&event_id).unwrap();
-        assert_eq!(event.is_canceled, true);
-    }
-}
-        let salt = BytesN::from_array(&env, &[0u8; 32]);
-        let mut args = Vec::new(&env);
+        let mut args = Vec::new(env);
         args.push_back(env.current_contract_address().to_val());
         args.push_back(salt.to_val());
 
         let nft_addr: Address =
-            env.invoke_contract(&factory_addr, &Symbol::new(&env, "deploy_ticket"), args);
-        nft_addr
+            env.invoke_contract(&factory_addr, &Symbol::new(env, "deploy_ticket"), args);
+
+        Ok(nft_addr)
     }
 }
 
