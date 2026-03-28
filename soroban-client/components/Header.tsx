@@ -75,6 +75,14 @@ export default function Header() {
           >
             Marketplace
           </Link>
+          {isConnected && (
+            <Link
+              href="/dashboard"
+              className="text-gray-200 hover:text-white font-medium transition"
+            >
+              Dashboard
+            </Link>
+          )}
         </nav>
 
         {/* Desktop Actions */}
