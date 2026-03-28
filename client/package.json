@@ -7,7 +7,11 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:debug": "playwright test --debug",
+    "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.0",
@@ -33,7 +37,11 @@
     "slick-carousel": "^1.8.1",
     "starknet": "^5.29.0",
     "starknet-tokenbound-sdk": "^0.2.0",
-    "tailwind-merge": "^2.4.0"
+    "tailwind-merge": "^2.4.0",
+    "pino": "^9.0.0",
+    "pino-pretty": "^11.0.0",
+    "@sentry/react": "^8.0.0",
+    "web-vitals": "^4.0.0"
   },
   "devDependencies": {
     "@types/react": "^18.3.3",

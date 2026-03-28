@@ -8,6 +8,10 @@ jest.mock('@/contexts/WalletContext', () => ({
     useWallet: jest.fn(),
 }));
 
+jest.mock('next/navigation', () => ({
+    usePathname: () => '/',
+}));
+
 describe('Header Component', () => {
     it('renders navigation links properly', () => {
         (useWallet as jest.Mock).mockReturnValue({
@@ -21,9 +25,10 @@ describe('Header Component', () => {
         render(<Header />);
 
         expect(screen.getByText('CrowdPass')).toBeInTheDocument();
-        // Events, Marketplace, Create Events may appear multiple times (desktop + mobile)
+        // Home, Events, Analytics, and Create Events may appear multiple times (desktop + mobile)
+        expect(screen.getAllByText('Home').length).toBeGreaterThan(0);
         expect(screen.getAllByText('Events').length).toBeGreaterThan(0);
-        expect(screen.getAllByText('Marketplace').length).toBeGreaterThan(0);
+        expect(screen.getAllByText('Analytics').length).toBeGreaterThan(0);
         expect(screen.getAllByText('Create Events').length).toBeGreaterThan(0);
         expect(screen.getAllByText('Connect Wallet').length).toBeGreaterThan(0);
     });

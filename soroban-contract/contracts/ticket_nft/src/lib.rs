@@ -14,6 +14,7 @@ pub enum Error {
     InvalidTokenId = 2,
     Unauthorized = 3,
     RecipientAlreadyHasTicket = 4,
+    NotInitialized = 5,
 }
 
 /// Storage keys for the NFT contract
@@ -68,7 +69,8 @@ impl TicketNft {
     /// - If recipient already has a ticket
     pub fn mint_ticket_nft(env: Env, recipient: Address) -> Result<u128, Error> {
         // Authorize: only minter can mint
-        let minter: Address = env.storage().instance().get(&DataKey::Minter).unwrap();
+        let minter: Address = env.storage().instance().get(&DataKey::Minter)
+            .ok_or(Error::NotInitialized)?;
         minter.require_auth();
 
         // Check if user already has a ticket (one per user)
@@ -198,20 +200,20 @@ impl TicketNft {
     /// * `env` - The contract environment
     /// * `token_id` - The token ID to burn
     ///
-    /// # Panics
-    /// - If caller is not the token owner
-    pub fn burn(env: Env, token_id: u128) {
-        let owner = Self::owner_of(env.clone(), token_id).expect("Invalid token id");
+    /// # Errors
+    /// - If token_id does not exist
+    pub fn burn(env: Env, token_id: u128) -> Result<(), Error> {
+        let owner = Self::owner_of(env.clone(), token_id)?;
 
         // Authorize: only owner can burn
-        // In a real implementation, we might want to allow minter too,
-        // but require_auth() is the most reliable way to handle this in Soroban.
         owner.require_auth();
 
         env.storage().persistent().remove(&DataKey::Owner(token_id));
         env.storage()
             .persistent()
             .set(&DataKey::Balance(owner), &0u128);
+
+        Ok(())
     }
 
     /// Check if a token is valid (exists and not burned)
@@ -227,11 +229,11 @@ impl TicketNft {
     ///
     /// # Arguments
     /// * `env` - The contract environment
-    pub fn get_minter(env: Env) -> Address {
+    pub fn get_minter(env: Env) -> Result<Address, Error> {
         env.storage()
             .instance()
             .get(&DataKey::Minter)
-            .expect("Not initialized")
+            .ok_or(Error::NotInitialized)
     }
 }
 

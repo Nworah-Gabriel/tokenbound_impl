@@ -6,6 +6,7 @@ members = [
   "contracts/ticket_nft",
   "contracts/ticket_factory",
   "contracts/event_manager",
+  "tests/integration",
 ]
 exclude = ["contracts/hello-world"]
 

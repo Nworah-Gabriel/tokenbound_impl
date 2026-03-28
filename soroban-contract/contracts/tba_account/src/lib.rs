@@ -1,6 +1,6 @@
 #![no_std]
 use soroban_sdk::{
-    auth::Context, contract, contractimpl, contracttype, Address, BytesN, Env, IntoVal, Symbol,
+    auth::Context, contract, contracterror, contractimpl, contracttype, Address, BytesN, Env, IntoVal, Symbol,
     Val, Vec,
 };
 
@@ -144,12 +144,12 @@ impl TbaAccount {
         set_salt(&env, &salt);
         set_initialized(&env, &true);
         
-        Ok(())
-
         // Extend instance TTL
         env.storage()
             .instance()
             .extend_ttl(30 * 24 * 60 * 60 / 5, 100 * 24 * 60 * 60 / 5);
+
+        Ok(())
     }
 
     /// Get the NFT contract address

@@ -50,7 +50,7 @@ fn test_can_deploy_ticket_contract() {
     let salt = BytesN::from_array(&env, &[1u8; 32]);
 
     // Deploy a ticket contract
-    let deployed_address = client.deploy_ticket(&minter, &salt);
+    let deployed_address = client.deploy_ticket(&minter, &salt).unwrap();
 
     // Verify the deployed address is valid (not zero)
     assert!(deployed_address != Address::generate(&env));
@@ -68,7 +68,7 @@ fn test_returns_correct_address() {
     let salt = BytesN::from_array(&env, &[2u8; 32]);
 
     // Deploy and store the address
-    let deployed_address = client.deploy_ticket(&minter, &salt);
+    let deployed_address = client.deploy_ticket(&minter, &salt).unwrap();
 
     // Retrieve the address using get_ticket_contract
     let retrieved_address = client.get_ticket_contract(&1u32);
@@ -86,13 +86,13 @@ fn test_deployed_contract_has_correct_minter() {
     let salt = BytesN::from_array(&env, &[3u8; 32]);
 
     // Deploy a ticket contract
-    let deployed_address = client.deploy_ticket(&minter, &salt);
+    let deployed_address = client.deploy_ticket(&minter, &salt).unwrap();
 
     // Create a client for the deployed contract
     let nft_client = ticket_nft_contract::Client::new(&env, &deployed_address);
 
     // Verify the minter is set correctly
-    assert_eq!(nft_client.get_minter(), minter);
+    assert_eq!(nft_client.get_minter().unwrap(), minter);
 }
 
 /// Test: Can deploy multiple contracts with different salts
@@ -109,9 +109,9 @@ fn test_can_deploy_multiple_contracts() {
     let salt3 = BytesN::from_array(&env, &[6u8; 32]);
 
     // Deploy three ticket contracts
-    let addr1 = client.deploy_ticket(&minter1, &salt1);
-    let addr2 = client.deploy_ticket(&minter2, &salt2);
-    let addr3 = client.deploy_ticket(&minter3, &salt3);
+    let addr1 = client.deploy_ticket(&minter1, &salt1).unwrap();
+    let addr2 = client.deploy_ticket(&minter2, &salt2).unwrap();
+    let addr3 = client.deploy_ticket(&minter3, &salt3).unwrap();
 
     // Verify all addresses are different
     assert_ne!(addr1, addr2);
@@ -139,7 +139,7 @@ fn test_tracking_storage_works() {
     for i in 1u8..=5u8 {
         let minter = Address::generate(&env);
         let salt = BytesN::from_array(&env, &[i + 10; 32]);
-        client.deploy_ticket(&minter, &salt);
+        client.deploy_ticket(&minter, &salt).unwrap();
         assert_eq!(client.get_total_tickets(), i as u32);
     }
 
@@ -156,7 +156,7 @@ fn test_admin_authorization_required() {
     let salt = BytesN::from_array(&env, &[20u8; 32]);
 
     // Deploy ticket (this should require admin auth)
-    client.deploy_ticket(&minter, &salt);
+    client.deploy_ticket(&minter, &salt).unwrap();
 
     // Verify admin was the authorized party
     let auths = env.auths();
@@ -172,5 +172,5 @@ fn test_admin_authorization_required() {
 fn test_get_admin() {
     let (_env, admin, client, _wasm_hash) = setup_test();
 
-    assert_eq!(client.get_admin(), admin);
+    assert_eq!(client.get_admin().unwrap(), admin);
 }

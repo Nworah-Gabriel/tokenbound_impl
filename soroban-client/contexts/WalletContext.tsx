@@ -7,6 +7,8 @@ import {
     requestAccess,
 } from "@stellar/freighter-api";
 
+import { trackWalletConnection } from "@/lib/analytics";
+
 interface WalletContextType {
     address: string | null;
     isConnected: boolean;
@@ -60,6 +62,7 @@ useEffect(() => {
             if (response && response.address) {
                 setAddress(response.address);
                 localStorage.setItem('wallet_address', response.address);
+                trackWalletConnection();
                 console.log("Successfully connected:", response.address);
             } else if (response && response.error) {
                 console.error("Freighter returned an error:", response.error);

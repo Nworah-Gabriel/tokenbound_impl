@@ -14,7 +14,15 @@
 
 #![no_std]
 
-use soroban_sdk::{contract, contractimpl, contracttype, Address, BytesN, Env, IntoVal, Val, Vec};
+use soroban_sdk::{contract, contracterror, contractimpl, contracttype, Address, BytesN, Env, IntoVal, Val, Vec};
+
+/// Error codes for the Ticket Factory contract
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum Error {
+    NotInitialized = 1,
+    Unauthorized = 2,
+}
 
 /// Storage keys for the contract state
 #[contracttype]
@@ -69,9 +77,10 @@ impl TicketFactory {
     ///
     /// # Authorization
     /// Requires admin authorization
-    pub fn deploy_ticket(env: Env, minter: Address, salt: BytesN<32>) -> Address {
+    pub fn deploy_ticket(env: Env, minter: Address, salt: BytesN<32>) -> Result<Address, Error> {
         // Authorize: only admin can deploy
-        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        let admin: Address = env.storage().instance().get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
         admin.require_auth();
 
         // Get the WASM hash for deployment
@@ -79,7 +88,7 @@ impl TicketFactory {
             .storage()
             .instance()
             .get(&DataKey::TicketWasmHash)
-            .unwrap();
+            .ok_or(Error::NotInitialized)?;
 
         // Prepare constructor arguments for the Ticket NFT contract
         // The minter address is passed to initialize the NFT contract
@@ -122,7 +131,7 @@ impl TicketFactory {
             .instance()
             .extend_ttl(30 * 24 * 60 * 60 / 5, 100 * 24 * 60 * 60 / 5);
 
-        deployed_address
+        Ok(deployed_address)
     }
 
     /// Get the ticket contract address for a specific event
@@ -160,15 +169,16 @@ impl TicketFactory {
     ///
     /// # Returns
     /// The admin address
-    pub fn get_admin(env: Env) -> Address {
-        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+    pub fn get_admin(env: Env) -> Result<Address, Error> {
+        let admin: Address = env.storage().instance().get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
 
         // Extend instance TTL on read
         env.storage()
             .instance()
             .extend_ttl(30 * 24 * 60 * 60 / 5, 100 * 24 * 60 * 60 / 5);
 
-        admin
+        Ok(admin)
     }
 }
 
