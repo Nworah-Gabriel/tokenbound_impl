@@ -4,7 +4,7 @@ import { Button } from '../../Components/shared/button'
 import Layout from '../../Components/dashboard/layout'
 import { KitContext } from '../../context/kit-context'
 import {ethers} from 'ethers'
-import toast from 'react-hot-toast'
+import { toast } from 'sonner'
 import { cairo } from 'starknet'
 
 
@@ -42,11 +42,11 @@ const CreateEvent = () => {
         try {
            
             await eventContract.create_event(formData.theme, formData.type, _start_date, _end_date, cairo.uint256(formData.ticketPrice * 1e18), formData.total_ticket)
-            toast.remove(toast1);
+            toast.dismiss(toast1);
             toast.success("Event Created")
 
         } catch (error) {
-            toast.remove(toast1)
+            toast.dismiss(toast1)
             toast.error(error.message)
         }
     }

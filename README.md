@@ -144,36 +144,50 @@ CrowdPass utilizes Stellar's Soroban smart contracts to implement:
 
 ### Installation
 
+#### Using Makefile (Recommended)
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/crowdpass.git
-cd crowdpass
+git clone https://github.com/crowdpass-live/tokenbound_impl.git
+cd tokenbound_impl
 
-# Install dependencies
+# Setup all dependencies (client and contracts)
+make setup
+
+# Build all components
+make build
+```
+
+#### Using Docker (Local Development)
+```bash
+# Start all services (Stellar node, Contracts, Frontend)
+make docker-up
+
+# View logs
+docker-compose logs -f frontend
+```
+
+#### Manual Installation
+```bash
+# Install root dependencies (if any)
 npm install
 
 # Build smart contracts
-cd contracts
-soroban contract build
+cd soroban-contract
+cargo build --target wasm32-unknown-unknown --release
 
-# Deploy to testnet
-soroban contract deploy \
-  --wasm target/wasm32-unknown-unknown/release/crowdpass.wasm \
-  --network testnet
-```
-
-### Quick Start
-
-```bash
-# Run local development server
+# Run frontend
+cd ../client
+npm install
 npm run dev
-
-# Run tests
-npm test
-
-# Deploy to production
-npm run deploy
 ```
+
+### Quick Start Commands
+- `make setup` - Install all dependencies
+- `make build` - Build contracts and frontend
+- `make test` - Run all tests
+- `make docker-up` - Spin up local development environment
+- `make docker-down` - Stop local environment
+- `make lint` - Run linters
 
 ## Use Cases
 
