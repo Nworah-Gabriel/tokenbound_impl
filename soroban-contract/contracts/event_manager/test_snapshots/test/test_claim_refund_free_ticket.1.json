@@ -63,7 +63,7 @@
                         "symbol": "theme"
                       },
                       "val": {
-                        "string": "Meetup"
+                        "string": "Free Event"
                       }
                     },
                     {
@@ -73,7 +73,7 @@
                       "val": {
                         "i128": {
                           "hi": 0,
-                          "lo": 100
+                          "lo": 0
                         }
                       }
                     },
@@ -92,7 +92,7 @@
                       "val": {
                         "u128": {
                           "hi": 0,
-                          "lo": 20
+                          "lo": 10
                         }
                       }
                     }
@@ -112,7 +112,7 @@
           "function": {
             "contract_fn": {
               "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-              "function_name": "purchase_tickets",
+              "function_name": "purchase_ticket",
               "args": [
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
@@ -121,10 +121,7 @@
                   "u32": 0
                 },
                 {
-                  "u128": {
-                    "hi": 0,
-                    "lo": 10
-                  }
+                  "u32": 0
                 }
               ]
             }
@@ -235,7 +232,7 @@
                       "val": {
                         "u128": {
                           "hi": 0,
-                          "lo": 10
+                          "lo": 1
                         }
                       }
                     },
@@ -246,7 +243,7 @@
                       "val": {
                         "i128": {
                           "hi": 0,
-                          "lo": 900
+                          "lo": 0
                         }
                       }
                     }
@@ -357,7 +354,7 @@
                         "symbol": "theme"
                       },
                       "val": {
-                        "string": "Meetup"
+                        "string": "Free Event"
                       }
                     },
                     {
@@ -375,7 +372,7 @@
                       "val": {
                         "i128": {
                           "hi": 0,
-                          "lo": 100
+                          "lo": 0
                         }
                       }
                     },
@@ -386,7 +383,7 @@
                       "val": {
                         "u128": {
                           "hi": 0,
-                          "lo": 10
+                          "lo": 1
                         }
                       }
                     },
@@ -397,59 +394,11 @@
                       "val": {
                         "u128": {
                           "hi": 0,
-                          "lo": 20
+                          "lo": 10
                         }
                       }
                     }
                   ]
-                }
-              }
-            },
-            "ext": "v0"
-          },
-          1728000
-        ]
-      ],
-      [
-        {
-          "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-            "key": {
-              "vec": [
-                {
-                  "symbol": "EventBalance"
-                },
-                {
-                  "u32": 0
-                }
-              ]
-            },
-            "durability": "persistent"
-          }
-        },
-        [
-          {
-            "last_modified_ledger_seq": 0,
-            "data": {
-              "contract_data": {
-                "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-                "key": {
-                  "vec": [
-                    {
-                      "symbol": "EventBalance"
-                    },
-                    {
-                      "u32": 0
-                    }
-                  ]
-                },
-                "durability": "persistent",
-                "val": {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 0
-                  }
                 }
               }
             },
@@ -561,7 +510,7 @@
                           "val": {
                             "i128": {
                               "hi": 0,
-                              "lo": 100
+                              "lo": 0
                             }
                           }
                         },
@@ -572,7 +521,7 @@
                           "val": {
                             "u128": {
                               "hi": 0,
-                              "lo": 0
+                              "lo": 1
                             }
                           }
                         },
@@ -583,7 +532,7 @@
                           "val": {
                             "u128": {
                               "hi": 0,
-                              "lo": 20
+                              "lo": 10
                             }
                           }
                         }
@@ -917,13 +866,13 @@
                 {
                   "u128": {
                     "hi": 0,
-                    "lo": 10
+                    "lo": 1
                   }
                 },
                 {
                   "i128": {
                     "hi": 0,
-                    "lo": 900
+                    "lo": 0
                   }
                 }
               ]

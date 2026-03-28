@@ -63,7 +63,7 @@
                         "symbol": "theme"
                       },
                       "val": {
-                        "string": "Meetup"
+                        "string": "Test Event"
                       }
                     },
                     {
@@ -92,7 +92,7 @@
                       "val": {
                         "u128": {
                           "hi": 0,
-                          "lo": 20
+                          "lo": 10
                         }
                       }
                     }
@@ -112,7 +112,7 @@
           "function": {
             "contract_fn": {
               "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-              "function_name": "purchase_tickets",
+              "function_name": "purchase_ticket",
               "args": [
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
@@ -121,10 +121,7 @@
                   "u32": 0
                 },
                 {
-                  "u128": {
-                    "hi": 0,
-                    "lo": 10
-                  }
+                  "u32": 0
                 }
               ]
             }
@@ -173,7 +170,8 @@
           "sub_invocations": []
         }
       ]
-    ]
+    ],
+    []
   ],
   "ledger": {
     "protocol_version": 22,
@@ -235,7 +233,7 @@
                       "val": {
                         "u128": {
                           "hi": 0,
-                          "lo": 10
+                          "lo": 1
                         }
                       }
                     },
@@ -246,7 +244,7 @@
                       "val": {
                         "i128": {
                           "hi": 0,
-                          "lo": 900
+                          "lo": 100
                         }
                       }
                     }
@@ -357,7 +355,7 @@
                         "symbol": "theme"
                       },
                       "val": {
-                        "string": "Meetup"
+                        "string": "Test Event"
                       }
                     },
                     {
@@ -386,7 +384,7 @@
                       "val": {
                         "u128": {
                           "hi": 0,
-                          "lo": 10
+                          "lo": 1
                         }
                       }
                     },
@@ -397,7 +395,7 @@
                       "val": {
                         "u128": {
                           "hi": 0,
-                          "lo": 20
+                          "lo": 10
                         }
                       }
                     }
@@ -572,7 +570,7 @@
                           "val": {
                             "u128": {
                               "hi": 0,
-                              "lo": 0
+                              "lo": 1
                             }
                           }
                         },
@@ -583,7 +581,7 @@
                           "val": {
                             "u128": {
                               "hi": 0,
-                              "lo": 20
+                              "lo": 10
                             }
                           }
                         }
@@ -893,45 +891,5 @@
       ]
     ]
   },
-  "events": [
-    {
-      "event": {
-        "ext": "v0",
-        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
-        "type_": "contract",
-        "body": {
-          "v0": {
-            "topics": [
-              {
-                "symbol": "refund_claimed"
-              }
-            ],
-            "data": {
-              "vec": [
-                {
-                  "u32": 0
-                },
-                {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
-                },
-                {
-                  "u128": {
-                    "hi": 0,
-                    "lo": 10
-                  }
-                },
-                {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 900
-                  }
-                }
-              ]
-            }
-          }
-        }
-      },
-      "failed_call": false
-    }
-  ]
+  "events": []
 }
