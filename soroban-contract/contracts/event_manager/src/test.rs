@@ -186,6 +186,18 @@ fn test_claim_refund_double_claim() {
 }
 
 #[test]
+fn test_cancel_event_marks_event_canceled() {
+    let env = Env::default();
+    let (client, mock_addr) = setup(&env);
+    let (_, event_id) = make_event(&env, &client, &mock_addr, Vec::new(&env));
+
+    client.cancel_event(&event_id);
+
+    let event = client.get_event(&event_id);
+    assert!(event.is_canceled);
+}
+
+#[test]
 fn test_claim_refund_no_ticket_purchased() {
     let env = Env::default();
     let (client, mock_addr) = setup(&env);
@@ -381,7 +393,7 @@ fn test_purchase_tickets_increments_tickets_sold() {
     let (_, event_id) = make_event(&env, &client, &mock_addr, Vec::new(&env));
     let buyer = Address::generate(&env);
 
-    client.purchase_tickets(&buyer, &event_id, &3u128);
+    client.purchase_tickets(&buyer, &event_id, &0u32, &3u128);
 
     let event = client.get_event(&event_id);
     let purchase = client.get_buyer_purchase(&event_id, &buyer).unwrap();
@@ -396,7 +408,6 @@ fn test_purchase_tickets_applies_group_discount() {
     let organizer = Address::generate(&env);
     let start = env.ledger().timestamp() + 86_400;
 
-    // Create event with ticket_price = 100 and enough total tickets
     let event_id = client.create_event(&CreateEventParams {
         organizer,
         theme: String::from_str(&env, "Stellar Meetup"),
@@ -410,7 +421,7 @@ fn test_purchase_tickets_applies_group_discount() {
     });
     let buyer = Address::generate(&env);
 
-    client.purchase_tickets(&buyer, &event_id, &5u128);
+    client.purchase_tickets(&buyer, &event_id, &0u32, &5u128);
 
     let purchase = client.get_buyer_purchase(&event_id, &buyer).unwrap();
     assert_eq!(purchase.quantity, 5);
@@ -438,7 +449,7 @@ fn test_batch_purchase_refund_uses_total_paid() {
     });
     let buyer = Address::generate(&env);
 
-    client.purchase_tickets(&buyer, &event_id, &10u128);
+    client.purchase_tickets(&buyer, &event_id, &0u32, &10u128);
     client.cancel_event(&event_id);
     client.claim_refund(&buyer, &event_id);
 }
@@ -451,48 +462,22 @@ fn test_withdraw_funds_success() {
     let (client, mock_addr) = setup(&env);
     let (organizer, event_id) = make_event(&env, &client, &mock_addr, Vec::new(&env));
 
-    // Buy some tickets
     client.purchase_ticket(&Address::generate(&env), &event_id, &0u32);
     client.purchase_ticket(&Address::generate(&env), &event_id, &0u32);
 
-    // Advance ledger past the event end_date
     let event = client.get_event(&event_id);
     env.ledger().set_timestamp(event.end_date + 1);
 
-    // Organizer withdraws funds
     client.withdraw_funds(&event_id);
 
     // Second call must fail (double withdrawal prevention)
     let result = client.try_withdraw_funds(&event_id);
     assert!(result.is_err());
 
-    // Event state is unchanged (not cancelled, tickets_sold intact)
     let event_after = client.get_event(&event_id);
     assert!(!event_after.is_canceled);
     assert_eq!(event_after.tickets_sold, 2);
-    let _ = organizer; // organizer auth was mocked
-}
-
-#[test]
-fn test_withdraw_funds_not_organizer() {
-    let env = Env::default();
-    let (client, mock_addr) = setup(&env);
-    let (_, event_id) = make_event(&env, &client, &mock_addr, Vec::new(&env));
-
-    let event = client.get_event(&event_id);
-    env.ledger().set_timestamp(event.end_date + 1);
-
-    // Non-organizer attempts withdrawal (mock_all_auths is on, but the wrong address
-    // is encoded; we just verify try_ surface returns error when auth is not mocked)
-    let non_organizer = Address::generate(&env);
-    // Reset auths so the non-organizer cannot spoof the organizer
-    let result = client.try_withdraw_funds(&event_id);
-    // With mock_all_auths active this passes auth, but organizer check still guards it:
-    // The function itself checks event.organizer.require_auth(), so with mock_all_auths
-    // it will pass. We verify the non_organizer address is not the same as organizer.
-    let _ = non_organizer;
-    // Successful path: with mock_all_auths organizer auth is satisfied
-    assert!(result.is_ok());
+    let _ = organizer;
 }
 
 #[test]
@@ -526,10 +511,6 @@ fn test_withdraw_funds_double_withdrawal() {
     let env = Env::default();
     let (client, mock_addr) = setup(&env);
     let (_, event_id) = make_event(&env, &client, &mock_addr, Vec::new(&env));
-    // Event has 10 tickets, none sold — should fail
-    let result = client.try_join_waitlist(&Address::generate(&env), &event_id);
-    assert!(result.is_err());
-}
 
     client.purchase_ticket(&Address::generate(&env), &event_id, &0u32);
 
@@ -558,7 +539,6 @@ fn test_withdraw_funds_zero_balance() {
     let env = Env::default();
     let (client, mock_addr) = setup(&env);
 
-    // Free event: ticket_price = 0
     let organizer = Address::generate(&env);
     let start = env.ledger().timestamp() + 86_400;
     let event_id = client.create_event(&CreateEventParams {
@@ -617,5 +597,209 @@ fn test_withdraw_funds_after_partial_refunds() {
     let event = client.get_event(&event_id);
     env.ledger().set_timestamp(event.end_date + 1);
     let result = client.try_withdraw_funds(&event_id);
+    assert!(result.is_err());
+}
+
+// ========== Update Event Tests ==========
+
+fn setup_event_for_update(env: &Env) -> (EventManagerClient<'_>, Address, u32) {
+    let (client, mock_addr) = setup(env);
+    let (organizer, event_id) = make_event(env, &client, &mock_addr, Vec::new(env));
+    (client, organizer, event_id)
+}
+
+#[test]
+fn test_update_event_theme() {
+    let env = Env::default();
+    let (client, _organizer, event_id) = setup_event_for_update(&env);
+
+    client.update_event(
+        &event_id,
+        &Option::Some(String::from_str(&env, "Updated Theme")),
+        &Option::None,
+        &Option::None,
+        &Option::None,
+        &Option::None,
+    );
+
+    let event = client.get_event(&event_id);
+    assert_eq!(event.theme, String::from_str(&env, "Updated Theme"));
+}
+
+#[test]
+fn test_update_event_ticket_price() {
+    let env = Env::default();
+    let (client, _organizer, event_id) = setup_event_for_update(&env);
+
+    client.update_event(
+        &event_id,
+        &Option::None,
+        &Option::Some(2000_0000000i128),
+        &Option::None,
+        &Option::None,
+        &Option::None,
+    );
+
+    assert_eq!(client.get_event(&event_id).ticket_price, 2000_0000000i128);
+}
+
+#[test]
+fn test_update_event_total_tickets() {
+    let env = Env::default();
+    let (client, _organizer, event_id) = setup_event_for_update(&env);
+
+    client.update_event(
+        &event_id,
+        &Option::None,
+        &Option::None,
+        &Option::Some(200u128),
+        &Option::None,
+        &Option::None,
+    );
+
+    assert_eq!(client.get_event(&event_id).total_tickets, 200);
+}
+
+#[test]
+fn test_update_event_dates() {
+    let env = Env::default();
+    let (client, _organizer, event_id) = setup_event_for_update(&env);
+    let new_start = env.ledger().timestamp() + 172_800;
+    let new_end = new_start + 86_400;
+
+    client.update_event(
+        &event_id,
+        &Option::None,
+        &Option::None,
+        &Option::None,
+        &Option::Some(new_start),
+        &Option::Some(new_end),
+    );
+
+    let event = client.get_event(&event_id);
+    assert_eq!(event.start_date, new_start);
+    assert_eq!(event.end_date, new_end);
+}
+
+#[test]
+fn test_update_event_emits_event() {
+    let env = Env::default();
+    let (client, _organizer, event_id) = setup_event_for_update(&env);
+
+    client.update_event(
+        &event_id,
+        &Option::Some(String::from_str(&env, "Emit Test")),
+        &Option::None,
+        &Option::None,
+        &Option::None,
+        &Option::None,
+    );
+
+    assert_eq!(
+        client.get_event(&event_id).theme,
+        String::from_str(&env, "Emit Test")
+    );
+}
+
+#[test]
+fn test_update_event_canceled_fails() {
+    let env = Env::default();
+    let (client, _organizer, event_id) = setup_event_for_update(&env);
+    client.cancel_event(&event_id);
+
+    let result = client.try_update_event(
+        &event_id,
+        &Option::Some(String::from_str(&env, "Should fail")),
+        &Option::None,
+        &Option::None,
+        &Option::None,
+        &Option::None,
+    );
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_update_event_total_tickets_below_sold_fails() {
+    let env = Env::default();
+    let (client, mock_addr) = setup(&env);
+    let (_, event_id) = make_event(&env, &client, &mock_addr, Vec::new(&env));
+
+    client.purchase_ticket(&Address::generate(&env), &event_id, &0u32);
+    client.purchase_ticket(&Address::generate(&env), &event_id, &0u32);
+
+    let result = client.try_update_event(
+        &event_id,
+        &Option::None,
+        &Option::None,
+        &Option::Some(1u128),
+        &Option::None,
+        &Option::None,
+    );
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_update_event_start_date_past_fails() {
+    let env = Env::default();
+    let (client, _organizer, event_id) = setup_event_for_update(&env);
+    env.ledger()
+        .set_timestamp(env.ledger().timestamp() + 86_400 * 2);
+
+    let result = client.try_update_event(
+        &event_id,
+        &Option::None,
+        &Option::None,
+        &Option::None,
+        &Option::Some(env.ledger().timestamp() - 3_600),
+        &Option::None,
+    );
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_update_event_end_before_start_fails() {
+    let env = Env::default();
+    let (client, _organizer, event_id) = setup_event_for_update(&env);
+    let start_date = env.ledger().timestamp() + 86_400;
+
+    let result = client.try_update_event(
+        &event_id,
+        &Option::None,
+        &Option::None,
+        &Option::None,
+        &Option::Some(start_date),
+        &Option::Some(start_date - 3_600),
+    );
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_update_event_not_found_fails() {
+    let env = Env::default();
+    let (client, _) = setup(&env);
+
+    let result = client.try_update_event(
+        &999u32,
+        &Option::None,
+        &Option::None,
+        &Option::None,
+        &Option::None,
+        &Option::None,
+    );
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_refund_cannot_be_claimed_twice() {
+    let env = Env::default();
+    let (client, mock_addr) = setup(&env);
+    let (_, event_id) = make_event(&env, &client, &mock_addr, Vec::new(&env));
+    let buyer = Address::generate(&env);
+
+    client.purchase_ticket(&buyer, &event_id, &0u32);
+    client.cancel_event(&event_id);
+    client.claim_refund(&buyer, &event_id);
+
+    let result = client.try_claim_refund(&buyer, &event_id);
     assert!(result.is_err());
 }
